@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "data": {
+    "plan": {
+      "slug": "core",
+      "status": "active",
+      "expires_at": "2026-10-09T10:09:18.000Z"
+    },
+    "key": {
+      "name": "Core key",
+      "type": "subscription",
+      "created_at": "2026-09-09T10:10:52.449Z"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "Payment required / outside reserved window.",
+    "type": "payment_required",
+    "code": "402",
+    "param": null
+  }
+}

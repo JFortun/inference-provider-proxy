@@ -1,0 +1,393 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "inference-provider-proxy/contracts/dashboard.schema.json",
+  "title": "inference-provider-proxy dashboard document",
+  "description": "Pinned shape of GET /dashboard (FR-019, FR-023). Rendered by adapters/inbound/http/serialization.py, which emits no key this schema does not declare.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generated_at",
+    "session",
+    "subscription",
+    "gate",
+    "throughput",
+    "latency",
+    "errors",
+    "upstream",
+    "clients",
+    "recent_requests"
+  ],
+  "properties": {
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "session": { "$ref": "#/$defs/session" },
+    "subscription": { "$ref": "#/$defs/subscription" },
+    "gate": { "$ref": "#/$defs/gate" },
+    "throughput": { "$ref": "#/$defs/throughput" },
+    "latency": { "$ref": "#/$defs/latency" },
+    "errors": { "$ref": "#/$defs/errors" },
+    "upstream": { "$ref": "#/$defs/upstream" },
+    "clients": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/client" }
+    },
+    "recent_requests": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/request" }
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "description": "ISO-8601 instant, UTC, rendered with a Z suffix."
+    },
+    "nullable_timestamp": {
+      "type": ["string", "null"]
+    },
+    "latency_distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50", "p90", "p95", "p99", "max"],
+      "properties": {
+        "p50": { "type": "integer" },
+        "p90": { "type": "integer" },
+        "p95": { "type": "integer" },
+        "p99": { "type": "integer" },
+        "max": { "type": "integer" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "started_at",
+        "uptime_s",
+        "package_version",
+        "python_version",
+        "bind"
+      ],
+      "properties": {
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "uptime_s": { "type": "number" },
+        "package_version": { "type": "string" },
+        "python_version": { "type": "string" },
+        "bind": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["host", "port"],
+          "properties": {
+            "host": { "type": "string" },
+            "port": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "subscription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pool",
+        "status",
+        "expires_at",
+        "seconds_until_expiry",
+        "key_name",
+        "last_checked_at",
+        "stale"
+      ],
+      "properties": {
+        "pool": { "type": ["string", "null"] },
+        "status": { "type": ["string", "null"] },
+        "expires_at": { "$ref": "#/$defs/nullable_timestamp" },
+        "seconds_until_expiry": { "type": ["integer", "null"] },
+        "key_name": { "type": ["string", "null"] },
+        "last_checked_at": { "$ref": "#/$defs/nullable_timestamp" },
+        "stale": { "type": "boolean" }
+      }
+    },
+    "in_flight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "client",
+        "model",
+        "streaming",
+        "started_at",
+        "elapsed_s",
+        "ttfb_ms"
+      ],
+      "properties": {
+        "request_id": { "type": "string" },
+        "client": { "type": "string" },
+        "model": { "type": "string" },
+        "streaming": { "type": "boolean" },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "elapsed_s": { "type": "number" },
+        "ttfb_ms": { "type": ["integer", "null"] }
+      }
+    },
+    "waiting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "client",
+        "model",
+        "enqueued_at",
+        "waited_s",
+        "position"
+      ],
+      "properties": {
+        "request_id": { "type": "string" },
+        "client": { "type": "string" },
+        "model": { "type": "string" },
+        "enqueued_at": { "$ref": "#/$defs/timestamp" },
+        "waited_s": { "type": "number" },
+        "position": { "type": "integer" }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capacity",
+        "in_flight",
+        "queued",
+        "available_slots",
+        "admitted_total",
+        "rejected_full_total",
+        "rejected_timeout_total",
+        "cancelled_while_waiting_total",
+        "oldest_queue_wait_s",
+        "current",
+        "waiting"
+      ],
+      "properties": {
+        "capacity": { "type": "integer" },
+        "in_flight": { "type": "integer" },
+        "queued": { "type": "integer" },
+        "available_slots": { "type": "integer" },
+        "admitted_total": { "type": "integer" },
+        "rejected_full_total": { "type": "integer" },
+        "rejected_timeout_total": { "type": "integer" },
+        "cancelled_while_waiting_total": { "type": "integer" },
+        "oldest_queue_wait_s": { "type": ["number", "null"] },
+        "current": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/in_flight" }
+        },
+        "waiting": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/waiting" }
+        }
+      }
+    },
+    "throughput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requests_total",
+        "requests_completed",
+        "requests_failed",
+        "requests_aborted",
+        "prompt_tokens_total",
+        "completion_tokens_total",
+        "tokens_per_second_recent",
+        "requests_per_minute_recent"
+      ],
+      "properties": {
+        "requests_total": { "type": "integer" },
+        "requests_completed": { "type": "integer" },
+        "requests_failed": { "type": "integer" },
+        "requests_aborted": { "type": "integer" },
+        "prompt_tokens_total": { "type": "integer" },
+        "completion_tokens_total": { "type": "integer" },
+        "tokens_per_second_recent": { "type": "number" },
+        "requests_per_minute_recent": { "type": "number" }
+      }
+    },
+    "latency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "queue_wait_ms",
+        "time_to_first_byte_ms",
+        "total_duration_ms"
+      ],
+      "properties": {
+        "queue_wait_ms": { "$ref": "#/$defs/latency_distribution" },
+        "time_to_first_byte_ms": { "$ref": "#/$defs/latency_distribution" },
+        "total_duration_ms": { "$ref": "#/$defs/latency_distribution" }
+      }
+    },
+    "error_episode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "kind",
+        "status",
+        "model",
+        "client",
+        "provider_correlation_id"
+      ],
+      "properties": {
+        "at": { "$ref": "#/$defs/timestamp" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "provider_busy",
+            "queue_timeout",
+            "queue_full",
+            "upstream_auth",
+            "edge_block",
+            "not_reserved",
+            "upstream_5xx",
+            "upstream_unreachable",
+            "client_aborted",
+            "unknown"
+          ]
+        },
+        "status": { "type": ["integer", "null"] },
+        "model": { "type": ["string", "null"] },
+        "client": { "type": ["string", "null"] },
+        "provider_correlation_id": { "type": ["string", "null"] }
+      }
+    },
+    "errors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "by_kind", "recent"],
+      "properties": {
+        "total": { "type": "integer" },
+        "by_kind": {
+          "description": "Every ErrorKind is always present, zero-initialised.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider_busy",
+            "queue_timeout",
+            "queue_full",
+            "upstream_auth",
+            "edge_block",
+            "not_reserved",
+            "upstream_5xx",
+            "upstream_unreachable",
+            "client_aborted",
+            "unknown"
+          ],
+          "properties": {
+            "provider_busy": { "type": "integer" },
+            "queue_timeout": { "type": "integer" },
+            "queue_full": { "type": "integer" },
+            "upstream_auth": { "type": "integer" },
+            "edge_block": { "type": "integer" },
+            "not_reserved": { "type": "integer" },
+            "upstream_5xx": { "type": "integer" },
+            "upstream_unreachable": { "type": "integer" },
+            "client_aborted": { "type": "integer" },
+            "unknown": { "type": "integer" }
+          }
+        },
+        "recent": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/error_episode" }
+        }
+      }
+    },
+    "upstream_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "context_length"],
+      "properties": {
+        "id": { "type": "string" },
+        "context_length": { "type": ["integer", "null"] }
+      }
+    },
+    "upstream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base_url",
+        "retries_total",
+        "last_error",
+        "models",
+        "models_checked_at"
+      ],
+      "properties": {
+        "base_url": { "type": "string" },
+        "retries_total": { "type": "integer" },
+        "last_error": { "type": ["string", "null"] },
+        "models": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/upstream_model" }
+        },
+        "models_checked_at": { "$ref": "#/$defs/nullable_timestamp" }
+      }
+    },
+    "client": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "client",
+        "user_agent",
+        "requests",
+        "failed",
+        "aborted",
+        "avg_queue_wait_ms",
+        "avg_duration_ms",
+        "last_seen_at"
+      ],
+      "properties": {
+        "client": { "type": "string" },
+        "user_agent": { "type": "string" },
+        "requests": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "aborted": { "type": "integer" },
+        "avg_queue_wait_ms": { "type": "number" },
+        "avg_duration_ms": { "type": "number" },
+        "last_seen_at": {
+          "type": "string",
+          "description": "Never null: the serializer renders an absent timestamp as an empty string."
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "at",
+        "client",
+        "model",
+        "streaming",
+        "status",
+        "queue_wait_ms",
+        "queue_position",
+        "ttfb_ms",
+        "duration_ms",
+        "prompt_tokens",
+        "completion_tokens",
+        "aborted",
+        "provider_id",
+        "provider_correlation_id"
+      ],
+      "properties": {
+        "request_id": { "type": "string" },
+        "at": { "$ref": "#/$defs/timestamp" },
+        "client": { "type": "string" },
+        "model": { "type": "string" },
+        "streaming": { "type": "boolean" },
+        "status": { "type": "integer" },
+        "queue_wait_ms": { "type": "integer" },
+        "queue_position": { "type": ["integer", "null"] },
+        "ttfb_ms": { "type": ["integer", "null"] },
+        "duration_ms": { "type": "integer" },
+        "prompt_tokens": { "type": ["integer", "null"] },
+        "completion_tokens": { "type": ["integer", "null"] },
+        "aborted": { "type": "boolean" },
+        "provider_id": { "type": ["string", "null"] },
+        "provider_correlation_id": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
