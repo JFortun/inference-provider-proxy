@@ -2,17 +2,17 @@
 
 A small native Python service for a home LAN. It sits in front of a **single-key** inference provider subscription, owns the one API key, and makes sure only one chat completion is ever in flight against the provider at a time. Overlapping requests from several machines queue and are served in arrival order instead of colliding with the provider's concurrency limit.
 
-It speaks the OpenAI dialect, so existing clients work by changing only the base address — and **no credential is needed**, because the deployment is a trusted home network.
+It speaks the OpenAI dialect, so any OpenAI-compatible client works by changing only the base address — and **no credential is needed**, because the deployment is a trusted home network.
 
 ## What you get
 
-| Route | Gated? | Purpose |
-|-------|--------|---------|
-| `POST /v1/chat/completions` | yes | Chat, streaming and non-streaming. |
-| `GET /v1/models` | no | Provider catalogue, short-TTL cached. |
-| `GET /v1/usage` | no | Entitlement, cached and background-refreshed. |
-| `GET /dashboard` | no | One JSON document describing the whole session. |
-| `GET /healthz` | no | Cheap liveness; performs no provider call. |
+| Route                       | Gated? | Purpose                                         |
+| --------------------------- | ------ | ----------------------------------------------- |
+| `POST /v1/chat/completions` | yes    | Chat, streaming and non-streaming.              |
+| `GET /v1/models`            | no     | Provider catalogue, short-TTL cached.           |
+| `GET /v1/usage`             | no     | Entitlement, cached and background-refreshed.   |
+| `GET /dashboard`            | no     | One JSON document describing the whole session. |
+| `GET /healthz`              | no     | Cheap liveness; performs no provider call.      |
 
 ## Setup
 
@@ -27,16 +27,18 @@ cp .env.example .env    # then put your real provider key in .env
 
 Every setting uses the `IPP_` prefix. The ones you are most likely to touch:
 
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `IPP_UPSTREAM_BASE_URL` | `https://api.example.com` | Provider address. Set it in `.env`. |
-| `IPP_UPSTREAM_API_KEY` | — | Your paid key. Never sent to clients, never logged. |
-| `IPP_BIND_HOST` / `IPP_BIND_PORT` | `0.0.0.0` / `13306` | Where the proxy listens. |
-| `IPP_PROVIDER_CONCURRENCY` | `1` | In-flight chat requests allowed. |
-| `IPP_MAX_QUEUE_DEPTH` | `64` | Waiters before new arrivals are rejected. |
-| `IPP_QUEUE_TIMEOUT` | `900` | Longest a request may wait for a slot. |
-| `IPP_DISCONNECT_RELEASE` | `15` | Bound on releasing the key after a mid-stream disconnect. |
-| `IPP_MAX_RETRIES` | `2` | Bounded retry budget for transient provider failures. |
+| Variable                          | Default                   | Meaning                                                   |
+| --------------------------------- | ------------------------- | --------------------------------------------------------- |
+| `IPP_UPSTREAM_BASE_URL`           | `https://api.example.com` | Provider address. Set it in `.env`.                       |
+| `IPP_UPSTREAM_API_KEY`            | —                         | Your paid key. Never sent to clients, never logged.       |
+| `IPP_BIND_HOST` / `IPP_BIND_PORT` | `0.0.0.0` / `13306`       | Where the proxy listens.                                  |
+| `IPP_PROVIDER_CONCURRENCY`        | `1`                       | In-flight chat requests allowed.                          |
+| `IPP_MAX_QUEUE_DEPTH`             | `64`                      | Waiters before new arrivals are rejected.                 |
+| `IPP_QUEUE_TIMEOUT`               | `900`                     | Longest a request may wait for a slot.                    |
+| `IPP_DISCONNECT_RELEASE`          | `15`                      | Bound on releasing the key after a mid-stream disconnect. |
+| `IPP_MAX_RETRIES`                 | `2`                       | Bounded retry budget for transient provider failures.     |
+
+`.env.example` lists the full set (upstream/stream timeouts, cache TTLs, access logging, metrics retention).
 
 ## Run
 
@@ -60,6 +62,16 @@ curl http://proxy-host:13306/v1/chat/completions \
 
 Streaming works the same way with `"stream": true`.
 
+## Point a client at it
+
+Any client that speaks the OpenAI dialect needs exactly three things:
+
+1. **Base URL** — `http://proxy-host:13306/v1` (note the `/v1` suffix).
+2. **Credential** — a placeholder. The proxy ignores whatever the client sends and substitutes the real key server-side, so any non-empty value (or the literal string `not-a-key`) satisfies clients that refuse to start without one.
+3. **Model list** — take names from `GET /v1/models`; they are whatever the provider offers.
+
+No client-side concurrency setting matters: requests simply wait in the queue at the proxy, regardless of how many the client fires at once.
+
 ## Distribution
 
 `uv build` produces a wheel and an sdist with the standard PEP 517 backend:
@@ -78,29 +90,6 @@ ipp --host 0.0.0.0 --port 13306
 ```
 
 `uv tool install .` does the same straight from a checkout, and `dist/` is git-ignored. Long-running supervision (auto-start, restart after failure) is left to whatever the host already runs — this repo deliberately ships no service unit.
-
-## Point an editor at it
-
-Zed's OpenAI-compatible provider needs only the base URL and a throwaway credential:
-
-```jsonc
-// settings.json
-{
-  "language_models": {
-    "openai_compatible": {
-      "ipp": {
-        "api_url": "http://proxy-host:13306/v1",
-        "available_models": [
-          { "name": "deepseek-v4.1-flash", "max_tokens": 128000 },
-          { "name": "mimo-v2.5", "max_tokens": 32000 }
-        ]
-      }
-    }
-  }
-}
-```
-
-Any value works for the credential field; the proxy ignores client credentials and substitutes the real key server-side.
 
 ## The dashboard
 
@@ -122,7 +111,7 @@ The script asserts every request returned `200`, that queue waits grew under con
 
 ```sh
 uv run pytest                                        # unit, integration, architecture — 100% coverage gate
-uv run pytest --run-e2e qa/e2e --no-cov              # real LangChain client, real provider
+uv run pytest --run-e2e qa/e2e --no-cov              # real OpenAI-dialect client, real provider
 uv run ruff check . && uv run ruff format --check .
 uv run ty check src
 ```
