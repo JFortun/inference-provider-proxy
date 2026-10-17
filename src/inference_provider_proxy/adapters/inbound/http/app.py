@@ -11,6 +11,7 @@ from inference_provider_proxy.adapters.inbound.http import (
     admin_routes,
     dashboard_routes,
     openai_routes,
+    ui_routes,
 )
 from inference_provider_proxy.adapters.inbound.http.deps import Services
 from inference_provider_proxy.adapters.inbound.http.error_handlers import register_error_handlers
@@ -35,4 +36,5 @@ def create_app(services: Services, *, lifespan: Any = None) -> FastAPI:
     app.include_router(admin_routes.router)
     app.include_router(openai_routes.router)
     app.include_router(dashboard_routes.router)
+    app.include_router(ui_routes.router)
     return app

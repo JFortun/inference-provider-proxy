@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta http-equiv="refresh" content="5" />
+        <title>ipp · inference-provider-proxy</title>
+        <link rel="stylesheet" href="/styles.css" />
+    </head>
+    <body>
+        <header class="top">
+            <div class="brand">ipp <span>inference-provider-proxy</span></div>
+            <div class="topmeta">
+                <span>generated $generated</span>
+                <span>uptime $uptime</span>
+                <span>v$version</span>
+                <span>python $python</span>
+                <span class="mono">$bind</span>
+                <a href="/dashboard">JSON</a>
+            </div>
+        </header>
+
+        <main>
+            <section class="kpis">
+                <article class="card">
+                    <h2>Gate</h2>
+                    <p class="big">$in_flight <span>/ $capacity</span></p>
+                    <div class="meter">$meter_cells</div>
+                    <p class="sub">queue $queued · free $free</p>
+                </article>
+                <article class="card">
+                    <h2>Throughput</h2>
+                    <p class="big">$rpm <span>rpm</span></p>
+                    <p class="sub">$tok_per_s tok/s</p>
+                    <p class="sub">
+                        $requests_total total · $failed failed · $aborted
+                        aborted
+                    </p>
+                </article>
+                <article class="card">
+                    <h2>Time to first byte</h2>
+                    <p class="big">$ttfb_p50 <span>p50</span></p>
+                    <p class="sub">p95 $ttfb_p95 · p99 $ttfb_p99</p>
+                    <p class="sub">
+                        prompt $prompt_tokens · completion $completion_tokens
+                        tokens
+                    </p>
+                </article>
+                <article class="card">
+                    <h2>Errors</h2>
+                    <p class="big">$errors_total</p>
+                    <p class="sub">$busy_pill</p>
+                    <p class="sub">upstream retries $retries</p>
+                </article>
+                <article class="card">
+                    <h2>Subscription</h2>
+                    <p class="big">$sub_status</p>
+                    <p class="sub">
+                        $sub_pool · expires in $expires $stale_pill
+                    </p>
+                    <p class="sub">checked $last_checked · $key_name</p>
+                </article>
+            </section>
+
+            <section class="card">
+                <h2>Concurrency</h2>
+                <div class="stats">
+                    <span><b>$capacity</b> capacity</span>
+                    <span><b>$in_flight</b> in flight</span>
+                    <span><b>$queued</b> queued</span>
+                    <span><b>$free</b> free</span>
+                    <span><b>$admitted</b> admitted</span>
+                    <span><b>$rejected_full</b> rejected full</span>
+                    <span><b>$rejected_timeout</b> rejected timeout</span>
+                    <span><b>$cancelled_waiting</b> cancelled waiting</span>
+                    <span>oldest wait <b>$oldest_wait</b></span>
+                </div>
+                <div class="grid2">
+                    <div>
+                        <h3>Holding the key</h3>
+                        <div class="tablewrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Request</th>
+                                        <th>Client</th>
+                                        <th>Model</th>
+                                        <th></th>
+                                        <th>Elapsed</th>
+                                        <th>TTFB</th>
+                                        <th>Started</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    $current_rows
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="empty">slot free</p>
+                    </div>
+                    <div>
+                        <h3>Queue</h3>
+                        <ol class="queue">
+                            $queue_rows
+                            <li class="empty">queue empty</li>
+                        </ol>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Latency</h2>
+                <div class="dist">
+                    <span class="dist-name">queue wait</span
+                    ><span class="bar bar--dist"
+                        ><i style="width: $qw_width%"></i
+                        ><span
+                            class="tick"
+                            style="left: $qw_tick%"
+                        ></span></span
+                    ><span class="dist-stats mono">$qw_stats</span>
+                </div>
+                <div class="dist">
+                    <span class="dist-name">time to first byte</span
+                    ><span class="bar bar--dist"
+                        ><i style="width: $ttfb_width%"></i
+                        ><span
+                            class="tick"
+                            style="left: $ttfb_tick%"
+                        ></span></span
+                    ><span class="dist-stats mono">$ttfb_stats</span>
+                </div>
+                <div class="dist">
+                    <span class="dist-name">total duration</span
+                    ><span class="bar bar--dist"
+                        ><i style="width: $td_width%"></i
+                        ><span
+                            class="tick"
+                            style="left: $td_tick%"
+                        ></span></span
+                    ><span class="dist-stats mono">$td_stats</span>
+                </div>
+            </section>
+
+            <div class="grid2">
+                <section class="card">
+                    <h2>Errors by kind</h2>
+                    <div class="kinds">
+                        <div class="kind">
+                            <span>provider busy</span
+                            ><span class="bar"
+                                ><i
+                                    style="width: $width_provider_busy%"
+                                ></i></span
+                            ><b class="num">$count_provider_busy</b>
+                            <span class="pill pill--ok">expected 0</span>
+                        </div>
+                        <div class="kind">
+                            <span>queue timeout</span
+                            ><span class="bar"
+                                ><i
+                                    style="width: $width_queue_timeout%"
+                                ></i></span
+                            ><b class="num">$count_queue_timeout</b>
+                        </div>
+                        <div class="kind">
+                            <span>queue full</span
+                            ><span class="bar"
+                                ><i style="width: $width_queue_full%"></i></span
+                            ><b class="num">$count_queue_full</b>
+                        </div>
+                        <div class="kind">
+                            <span>upstream auth</span
+                            ><span class="bar"
+                                ><i
+                                    style="width: $width_upstream_auth%"
+                                ></i></span
+                            ><b class="num">$count_upstream_auth</b>
+                        </div>
+                        <div class="kind">
+                            <span>edge block</span
+                            ><span class="bar"
+                                ><i style="width: $width_edge_block%"></i></span
+                            ><b class="num">$count_edge_block</b>
+                        </div>
+                        <div class="kind">
+                            <span>not reserved</span
+                            ><span class="bar"
+                                ><i
+                                    style="width: $width_not_reserved%"
+                                ></i></span
+                            ><b class="num">$count_not_reserved</b>
+                        </div>
+                        <div class="kind">
+                            <span>upstream 5xx</span
+                            ><span class="bar"
+                                ><i
+                                    style="width: $width_upstream_5xx%"
+                                ></i></span
+                            ><b class="num">$count_upstream_5xx</b>
+                        </div>
+                        <div class="kind">
+                            <span>upstream unreachable</span
+                            ><span class="bar"
+                                ><i
+                                    style="width: $width_upstream_unreachable%"
+                                ></i></span
+                            ><b class="num">$count_upstream_unreachable</b>
+                        </div>
+                        <div class="kind">
+                            <span>client aborted</span
+                            ><span class="bar"
+                                ><i
+                                    style="width: $width_client_aborted%"
+                                ></i></span
+                            ><b class="num">$count_client_aborted</b>
+                        </div>
+                        <div class="kind">
+                            <span>unknown</span
+                            ><span class="bar"
+                                ><i style="width: $width_unknown%"></i></span
+                            ><b class="num">$count_unknown</b>
+                        </div>
+                    </div>
+                    <h3>Recent episodes</h3>
+                    <div class="tablewrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>When</th>
+                                    <th>Kind</th>
+                                    <th>Status</th>
+                                    <th>Model</th>
+                                    <th>Client</th>
+                                    <th>Correlation</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                $episode_rows
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="empty">no error episodes</p>
+                </section>
+
+                <section class="card">
+                    <h2>Recent requests</h2>
+                    <div class="tablewrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>When</th>
+                                    <th>Status</th>
+                                    <th>Model</th>
+                                    <th>Client</th>
+                                    <th></th>
+                                    <th>Queue</th>
+                                    <th>TTFB</th>
+                                    <th>Duration</th>
+                                    <th>Tokens</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                $request_rows
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="empty">no requests yet</p>
+                </section>
+            </div>
+
+            <div class="grid2">
+                <section class="card">
+                    <h2>Clients</h2>
+                    <div class="tablewrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Client</th>
+                                    <th>User agent</th>
+                                    <th>Reqs</th>
+                                    <th></th>
+                                    <th>Failed</th>
+                                    <th>Aborted</th>
+                                    <th>Avg wait</th>
+                                    <th>Avg total</th>
+                                    <th>Last seen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                $client_rows
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="empty">no clients yet</p>
+                </section>
+
+                <section class="card">
+                    <h2>Upstream</h2>
+                    <p class="sub mono">$base_url</p>
+                    $last_error_banner
+                    <div class="stats">
+                        <span><b>$retries</b> retries</span>
+                        <span><b>$model_count</b> models</span>
+                        <span>checked <b>$models_checked</b></span>
+                    </div>
+                    <div class="chips">$model_chips</div>
+                </section>
+            </div>
+        </main>
+    </body>
+</html>

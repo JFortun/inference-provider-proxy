@@ -6,13 +6,14 @@ It speaks the OpenAI dialect, so any OpenAI-compatible client works by changing 
 
 ## What you get
 
-| Route                       | Gated? | Purpose                                         |
-| --------------------------- | ------ | ----------------------------------------------- |
-| `POST /v1/chat/completions` | yes    | Chat, streaming and non-streaming.              |
-| `GET /v1/models`            | no     | Provider catalogue, short-TTL cached.           |
-| `GET /v1/usage`             | no     | Entitlement, cached and background-refreshed.   |
-| `GET /dashboard`            | no     | One JSON document describing the whole session. |
-| `GET /healthz`              | no     | Cheap liveness; performs no provider call.      |
+| Route                       | Gated? | Purpose                                                |
+| --------------------------- | ------ | ------------------------------------------------------ |
+| `POST /v1/chat/completions` | yes    | Chat, streaming and non-streaming.                     |
+| `GET /v1/models`            | no     | Provider catalogue, short-TTL cached.                  |
+| `GET /v1/usage`             | no     | Entitlement, cached and background-refreshed.          |
+| `GET /dashboard`            | no     | One JSON document describing the whole session.        |
+| `GET /`                     | no     | The same document as an HTML page (HTML + CSS, no JS). |
+| `GET /healthz`              | no     | Cheap liveness; performs no provider call.             |
 
 ## Setup
 
