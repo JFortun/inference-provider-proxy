@@ -92,6 +92,18 @@ ipp --host 0.0.0.0 --port 13306
 
 `uv tool install .` does the same straight from a checkout, and `dist/` is git-ignored. Long-running supervision (auto-start, restart after failure) is left to whatever the host already runs — this repo deliberately ships no service unit.
 
+Every published release carries the same wheel and sdist as assets, built and attached by the [release workflow](.github/workflows/release.yml), so any tagged version installs straight from GitHub (swap `0.1.0` for the version you want):
+
+```sh
+uv tool install https://github.com/JFortun/inference-provider-proxy/releases/download/v0.1.0/inference_provider_proxy-0.1.0-py3-none-any.whl
+```
+
+To run a released version without installing it, `uvx` executes the wheel straight from the download cache; on a host with only [uv](https://docs.astral.sh/uv/) it also fetches the Python interpreter and the dependencies:
+
+```sh
+uvx --from https://github.com/JFortun/inference-provider-proxy/releases/download/v0.1.0/inference_provider_proxy-0.1.0-py3-none-any.whl ipp --host 0.0.0.0 --port 13306
+```
+
 ## The dashboard
 
 `GET /dashboard` returns one document with session identity, subscription status, gate state (including who currently holds the key and the ordered waiters), throughput, latency quantiles, an error breakdown by category, upstream status, per-client activity, and recent requests. Its field names are pinned by `src/inference_provider_proxy/contracts/dashboard.schema.json`.
