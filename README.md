@@ -38,6 +38,8 @@ Every setting uses the `IPP_` prefix. The ones you are most likely to touch:
 | `IPP_QUEUE_TIMEOUT`               | `900`                     | Longest a request may wait for a slot.                    |
 | `IPP_DISCONNECT_RELEASE`          | `15`                      | Bound on releasing the key after a mid-stream disconnect. |
 | `IPP_MAX_RETRIES`                 | `2`                       | Bounded retry budget for transient provider failures.     |
+| `IPP_LOG_LEVEL`                   | `info`                    | Level of the proxy's own log sections.                    |
+| `IPP_LOG_COLOR`                   | `auto`                    | ANSI colors: `auto`, `always` or `never`.                 |
 
 `.env.example` lists the full set (upstream/stream timeouts, cache TTLs, access logging, metrics retention).
 

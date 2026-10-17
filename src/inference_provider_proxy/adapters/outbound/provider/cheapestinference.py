@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import time
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -25,6 +27,8 @@ from inference_provider_proxy.application.ports.provider import (
 )
 from inference_provider_proxy.domain.errors import ErrorKind, ProxyError
 from inference_provider_proxy.domain.models import ModelInfo, SubscriptionInfo
+
+logger = logging.getLogger("ipp.provider")
 
 _CHAT_PATH = "/v1/chat/completions"
 _MODELS_PATH = "/v1/models"
@@ -71,6 +75,7 @@ class _OpenStream:
             yield chunk
 
     def _idle_timeout(self) -> ProxyError:
+        logger.warning("provider stream stalled for %ss, cutting it off", self._idle_timeout_s)
         return ProxyError(
             kind=ErrorKind.UPSTREAM_UNREACHABLE,
             http_status=502,
@@ -140,15 +145,26 @@ class CheapestInferenceProvider:
 
     async def complete(self, body: Mapping[str, Any]) -> ProviderCompletion:
         headers = self._outbound_headers()
+        started = time.monotonic()
         try:
             response = await self._client.post(_CHAT_PATH, json=dict(body), headers=headers)
         except httpx.TransportError as exc:
             raise self._unreachable(exc) from exc
+        logger.debug(
+            "POST %s status=%d in %dms",
+            _CHAT_PATH,
+            response.status_code,
+            int((time.monotonic() - started) * 1000),
+        )
 
         if response.status_code >= 400:
             raise self._classify(response.status_code, response.headers, response.content)
 
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            logger.error("provider returned malformed JSON: %s", type(exc).__name__)
+            raise
         return ProviderCompletion(
             payload=payload,
             status_code=response.status_code,
@@ -160,10 +176,17 @@ class CheapestInferenceProvider:
     @asynccontextmanager
     async def open_stream(self, body: Mapping[str, Any]) -> AsyncGenerator[_OpenStream]:
         headers = self._outbound_headers(stream=True)
+        started = time.monotonic()
         try:
             async with self._client.stream(
                 "POST", _CHAT_PATH, json=dict(body), headers=headers
             ) as response:
+                logger.debug(
+                    "POST %s status=%d in %dms",
+                    _CHAT_PATH,
+                    response.status_code,
+                    int((time.monotonic() - started) * 1000),
+                )
                 if response.status_code >= 400:
                     raw = await response.aread()
                     raise self._classify(response.status_code, response.headers, raw)
@@ -176,6 +199,7 @@ class CheapestInferenceProvider:
         try:
             data = json.loads(raw)
         except ValueError:
+            logger.warning("provider catalogue is not JSON; serving an empty list")
             return []
         models: list[ModelInfo] = []
         for item in data.get("data", []) if isinstance(data, dict) else []:
@@ -193,7 +217,14 @@ class CheapestInferenceProvider:
 
     async def _get_bytes(self, path: str) -> bytes:
         """GET one provider path, classifying any failure (FR-024, FR-025)."""
+        started = time.monotonic()
         async with self._client.stream("GET", path, headers=self._outbound_headers()) as response:
+            logger.debug(
+                "GET %s status=%d in %dms",
+                path,
+                response.status_code,
+                int((time.monotonic() - started) * 1000),
+            )
             if response.status_code >= 400:
                 raw = await response.aread()
                 raise self._classify(response.status_code, response.headers, raw)
@@ -218,8 +249,10 @@ class CheapestInferenceProvider:
         try:
             data = json.loads(raw)
         except ValueError:
+            logger.warning("provider usage payload is not JSON; marking the view stale")
             return SubscriptionInfo(last_checked_at=now, stale=True)
         if not isinstance(data, dict):
+            logger.warning("provider usage payload is not an object; marking the view stale")
             return SubscriptionInfo(last_checked_at=now, stale=True)
         # The provider wraps the payload: {"success": true, "data": {...}},
         # with the plan under "plan" and the key label under "key".
@@ -259,6 +292,9 @@ class CheapestInferenceProvider:
             return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
     def _unreachable(self, exc: Exception) -> ProxyError:
+        # The exception class only: its message may quote parts of a request,
+        # and nothing about the credential may reach a record (FR-018).
+        logger.warning("provider unreachable: %s", type(exc).__name__)
         return ProxyError(
             kind=ErrorKind.UPSTREAM_UNREACHABLE,
             http_status=502,
@@ -303,6 +339,11 @@ class CheapestInferenceProvider:
         # Credential rejection (JSON body) vs edge-layer block (non-JSON).
         if status in (401, 403):
             if payload is not None:
+                logger.error(
+                    "provider rejected the credential status=%d correlation=%s",
+                    status,
+                    correlation,
+                )
                 return ProxyError(
                     kind=ErrorKind.UPSTREAM_AUTH,
                     http_status=status,

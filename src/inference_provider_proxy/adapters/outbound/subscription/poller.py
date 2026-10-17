@@ -3,6 +3,9 @@
 Refreshes the entitlement view on a timer without ever touching the gate, so it
 can never consume chat capacity (FR-014). When a refresh fails the last known
 value is kept and marked stale rather than being cleared.
+
+A dead provider must not bury the log: the first failure and every tenth after
+it are WARNINGs, the rest are DEBUG, and recovery is announced once.
 """
 
 from __future__ import annotations
@@ -35,10 +38,12 @@ class SubscriptionPoller:
         self._interval_s = max(1.0, interval_s)
         self._clock = clock
         self._task: asyncio.Task[None] | None = None
+        self._consecutive_failures = 0
 
     async def start(self) -> None:
         if self._task is None:
             self._task = asyncio.create_task(self._run())
+            logger.info("subscription poller started interval=%.0fs", self._interval_s)
 
     async def stop(self) -> None:
         task = self._task
@@ -50,15 +55,26 @@ class SubscriptionPoller:
             await task
         except asyncio.CancelledError:
             pass
+        logger.info("subscription poller stopped")
 
     async def refresh_once(self) -> None:
         """One refresh attempt; failures mark the view stale (FR-015)."""
         try:
             info = await self._provider.fetch_usage()
         except Exception as exc:  # noqa: BLE001 - any failure means "stale"
-            logger.warning("subscription refresh failed: %s", type(exc).__name__)
+            self._consecutive_failures += 1
+            failures = self._consecutive_failures
+            log = logger.warning if failures == 1 or failures % 10 == 0 else logger.debug
+            log("subscription refresh failed: %s (attempt %d)", type(exc).__name__, failures)
             self._subscription.mark_stale(True)
             return
+        if self._consecutive_failures:
+            logger.info(
+                "subscription refresh recovered after %d failed attempts",
+                self._consecutive_failures,
+            )
+            self._consecutive_failures = 0
+        logger.debug("subscription refresh ok pool=%s stale=%s", info.pool, info.stale)
         self._subscription.update(info)
 
     async def _run(self) -> None:

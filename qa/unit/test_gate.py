@@ -6,6 +6,7 @@ The gate is the load-bearing component: T024 implements it, these tests prove it
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 
 import pytest
@@ -66,6 +67,42 @@ async def test_capacity_one_serializes_in_fifo_order() -> None:
     assert final.in_flight == 0
     assert final.queued == 0
     assert final.admitted_total == 4
+
+
+async def test_a_long_queue_wait_is_logged_at_info(caplog) -> None:
+    clock = FakeClock()
+    gate = AsyncioGate(capacity=1, max_depth=10, clock=clock)
+    release = asyncio.Event()
+
+    async def holder() -> None:
+        async with _slot(gate, "r0"):
+            await release.wait()
+
+    async def waiter() -> None:
+        async with _slot(gate, "r1"):
+            pass
+
+    first = asyncio.create_task(holder())
+    await _settle()
+    second = asyncio.create_task(waiter())
+    await _settle()
+    assert gate.snapshot().queued == 1
+
+    clock.advance(5.0)  # five seconds in the queue
+    with caplog.at_level(logging.DEBUG, logger="ipp.gate"):
+        release.set()
+        await asyncio.gather(first, second)
+
+    admitted = [
+        record
+        for record in caplog.records
+        if record.name == "ipp.gate" and record.levelno == logging.INFO
+    ]
+    assert len(admitted) == 1
+    message = admitted[0].getMessage()
+    assert "admitted after waiting" in message
+    assert "request_id=r1" in message
+    assert "waited_ms=5000" in message
 
 
 async def test_capacity_n_admits_up_to_capacity() -> None:

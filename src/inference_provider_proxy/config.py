@@ -9,6 +9,7 @@ on a trusted LAN (FR-016).
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -48,6 +49,10 @@ class Settings(BaseSettings):
     metrics_retention: int = Field(default=2000, ge=1)
     metadata_cache_ttl: float = Field(default=30.0, ge=0)
     access_log: bool = True
+    # Level for the ``ipp.*`` sections and ANSI coloring of the stream
+    # (``NO_COLOR``/``FORCE_COLOR`` are honoured by ``auto``).
+    log_level: Literal["critical", "error", "warning", "info", "debug", "trace"] = "info"
+    log_color: Literal["auto", "always", "never"] = "auto"
 
     @property
     def provider_key(self) -> str:

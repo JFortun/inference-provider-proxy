@@ -22,6 +22,8 @@ def test_documented_defaults_match_the_spec() -> None:
     assert settings.metrics_retention == 2000  # FR-030
     assert settings.metadata_cache_ttl == 30  # FR-002
     assert settings.access_log is True
+    assert settings.log_level == "info"  # FR-031
+    assert settings.log_color == "auto"  # FR-031
 
 
 def test_no_client_token_setting_exists() -> None:

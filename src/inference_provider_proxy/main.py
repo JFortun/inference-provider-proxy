@@ -7,8 +7,10 @@ service resumes serving on restart (FR-032, SC-013).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI
 
@@ -25,6 +27,9 @@ from inference_provider_proxy.application.services.catalog import CatalogService
 from inference_provider_proxy.application.services.chat import ChatService
 from inference_provider_proxy.application.services.dashboard import DashboardService
 from inference_provider_proxy.config import Settings, get_settings
+from inference_provider_proxy.logging_setup import configure_logging
+
+logger = logging.getLogger("ipp.app")
 
 
 def build_services(settings: Settings) -> tuple[Services, SubscriptionPoller]:
@@ -90,15 +95,40 @@ def build_services(settings: Settings) -> tuple[Services, SubscriptionPoller]:
 def build_app() -> FastAPI:
     """Entry point for ``uvicorn --factory``."""
     settings = get_settings()
+    configure_logging(settings.log_level, color=settings.log_color)
     services, poller = build_services(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        # Only the host part of the provider URL is printed: credentials must
+        # never reach a record, even when someone puts them in the base URL
+        # (FR-018), and the key itself is reported as presence only.
+        provider_host = urlsplit(settings.upstream_base_url).netloc.rsplit("@", 1)[-1]
+        logger.info(
+            "starting proxy on %s:%s provider=%s key=%s log_level=%s",
+            settings.bind_host,
+            settings.bind_port,
+            provider_host,
+            "set" if settings.upstream_api_key.get_secret_value() else "missing",
+            settings.log_level,
+        )
+        logger.info(
+            "limits capacity=%d queue_depth=%d queue_timeout=%.0fs retries=%d "
+            "upstream_timeout=%.0fs idle_timeout=%.0fs access_log=%s",
+            settings.provider_concurrency,
+            settings.max_queue_depth,
+            settings.queue_timeout,
+            settings.max_retries,
+            settings.upstream_timeout,
+            settings.stream_idle_timeout,
+            settings.access_log,
+        )
         await poller.start()
         try:
             yield
         finally:
             await poller.stop()
             await services.provider.aclose()
+            logger.info("proxy stopped")
 
     return create_app(services, lifespan=lifespan)

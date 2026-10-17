@@ -68,6 +68,39 @@ async def test_refresh_once_marks_the_view_stale_on_failure(caplog) -> None:
     assert "subscription refresh failed" in caplog.text
 
 
+async def test_repeated_failures_are_damped_and_recovery_is_announced(caplog) -> None:
+    calls = {"n": 0}
+    body = (FIXTURES / "usage_200.json").read_bytes()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            return httpx.Response(500, json={"error": {"message": "boom", "type": "internal"}})
+        return httpx.Response(200, content=body)
+
+    provider = _provider(handler)
+    metrics = _metrics()
+    try:
+        with caplog.at_level(logging.DEBUG, logger="ipp.subscription"):
+            poller = _poller(provider, metrics)
+            await poller.refresh_once()  # first failure: a WARNING
+            await poller.refresh_once()  # second: damped to DEBUG
+            await poller.refresh_once()  # healthy again: an INFO announcement
+    finally:
+        await provider.aclose()
+
+    records = [record for record in caplog.records if record.name == "ipp.subscription"]
+    warnings = [record for record in records if record.levelno == logging.WARNING]
+    debugs = [record for record in records if record.levelno == logging.DEBUG]
+    infos = [record for record in records if record.levelno == logging.INFO]
+
+    assert len(warnings) == 1
+    assert "subscription refresh failed" in warnings[0].getMessage()
+    assert any("attempt 2" in record.getMessage() for record in debugs)
+    assert len(infos) == 1
+    assert "recovered after 2 failed attempts" in infos[0].getMessage()
+
+
 async def test_start_is_idempotent_and_stop_cancels_the_loop() -> None:
     calls = {"n": 0}
     body = (FIXTURES / "usage_200.json").read_bytes()

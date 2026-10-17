@@ -8,6 +8,7 @@ cannot leak capacity.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
     from inference_provider_proxy.application.ports.provider import LLMProviderPort
     from inference_provider_proxy.config import Settings
     from inference_provider_proxy.domain.models import ChatRequest
+
+logger = logging.getLogger("ipp.chat")
 
 _MAX_RETRY_DELAY_S = 5.0
 _ABORT_STATUS = 499
@@ -62,7 +65,7 @@ class ChatService:
         ticket: QueueTicket | None = None
         try:
             ticket = await slot_cm.__aenter__()
-            completion = await self._call_with_retries(request.body)
+            completion = await self._call_with_retries(request.request_id, request.body)
         except ProxyError as exc:
             # Also catches a gate rejection (queue full or wait bound exceeded),
             # which never ran: it is still a classified failure and must be
@@ -114,7 +117,8 @@ class ChatService:
             raise
         try:
             stream_cm, stream = await self._with_retries(
-                lambda: self._open_stream_once(request.body)
+                request.request_id,
+                lambda: self._open_stream_once(request.body),
             )
         except ProxyError as exc:
             await self._close(slot_cm)
@@ -208,8 +212,8 @@ class ChatService:
                 )
             await self._close(slot_cm)
 
-    async def _call_with_retries(self, body: dict[str, Any]) -> Any:
-        return await self._with_retries(lambda: self._provider.complete(body))
+    async def _call_with_retries(self, request_id: str, body: dict[str, Any]) -> Any:
+        return await self._with_retries(request_id, lambda: self._provider.complete(body))
 
     async def _open_stream_once(self, body: dict[str, Any]) -> tuple[Any, ProviderStream]:
         """Open one upstream stream, returning its context manager and stream."""
@@ -217,13 +221,15 @@ class ChatService:
         stream = await stream_cm.__aenter__()
         return stream_cm, stream
 
-    async def _with_retries(self, call: Callable[[], Awaitable[_T]]) -> _T:
+    async def _with_retries(self, request_id: str, call: Callable[[], Awaitable[_T]]) -> _T:
         """Run ``call`` under the bounded retry budget (FR-012).
 
         Transient provider failures are retried, honouring ``retry-after`` and
         only while capacity permits (the slot is already held here), until the
         budget is exhausted, at which point the classified error is raised so
-        the request fails fast rather than waiting for recovery.
+        the request fails fast rather than waiting for recovery. Each attempt is
+        announced, and giving up after having retried is an ERROR, because by
+        then the client is about to be told the provider is unusable.
         """
         attempt = 0
         while True:
@@ -231,9 +237,27 @@ class ChatService:
                 return await call()
             except ProxyError as exc:
                 if not exc.retryable or attempt >= self._settings.max_retries:
+                    if attempt:
+                        logger.error(
+                            "retry budget exhausted after %d attempts request_id=%s "
+                            "kind=%s provider_status=%s",
+                            attempt,
+                            request_id,
+                            exc.kind,
+                            exc.provider_status,
+                        )
                     raise
                 attempt += 1
                 self._metrics.record_retry()
+                logger.warning(
+                    "retry %d/%d request_id=%s kind=%s provider_status=%s retry_after=%s",
+                    attempt,
+                    self._settings.max_retries,
+                    request_id,
+                    exc.kind,
+                    exc.provider_status,
+                    exc.retry_after_s,
+                )
                 if exc.retry_after_s:
                     await asyncio.sleep(min(exc.retry_after_s, _MAX_RETRY_DELAY_S))
 
@@ -369,6 +393,13 @@ class ChatService:
 
     @staticmethod
     def _unknown(exc: Exception) -> ProxyError:
+        # The traceback exists only here: the caller re-raises a ProxyError, so
+        # without this line the original failure would vanish from the log.
+        logger.error(
+            "unexpected failure classified as unknown: %s",
+            type(exc).__name__,
+            exc_info=exc,
+        )
         return ProxyError(
             kind=ErrorKind.UNKNOWN,
             http_status=502,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import httpx
 import pytest
@@ -139,6 +140,33 @@ async def test_midstream_unexpected_failure_is_classified_and_releases_the_slot(
 
     assert excinfo.value.kind is ErrorKind.UNKNOWN
     assert harness.gate.snapshot().in_flight == 0
+
+
+async def test_retry_budget_exhaustion_is_logged_as_an_error(asgi_client_factory, caplog) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": {"message": "boom", "type": "internal"}})
+
+    harness = build_harness(handler, max_retries=2)
+    client = asgi_client_factory(harness.app)
+
+    with caplog.at_level(logging.DEBUG, logger="ipp.chat"):
+        response = await client.post("/v1/chat/completions", json=_BODY)
+
+    assert response.status_code == 500
+    assert harness.metrics.upstream().retries_total == 2
+
+    chat = [record for record in caplog.records if record.name == "ipp.chat"]
+    retries = [record for record in chat if record.levelno == logging.WARNING]
+    assert [record.getMessage().split(" request_id")[0] for record in retries] == [
+        "retry 1/2",
+        "retry 2/2",
+    ]
+    exhausted = [record for record in chat if record.levelno == logging.ERROR]
+    assert len(exhausted) == 1
+    message = exhausted[0].getMessage()
+    assert "retry budget exhausted after 2 attempts" in message
+    assert "kind=upstream_5xx" in message
+    assert "request_id=" in message
 
 
 async def test_retry_honours_a_retry_after_hint(asgi_client_factory) -> None:

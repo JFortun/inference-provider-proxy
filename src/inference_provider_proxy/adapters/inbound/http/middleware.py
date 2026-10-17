@@ -19,6 +19,10 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = logging.getLogger("ipp.access")
 
+# Browser-facing pages are polled and reloaded; only API traffic belongs on the
+# INFO lane. Everything else still lands in the log, one line below.
+_QUIET_PATHS = frozenset({"/", "/styles.css", "/dashboard", "/healthz"})
+
 
 class RequestContextMiddleware:
     """Assign a request id and emit one redacted access-log line per request."""
@@ -52,7 +56,8 @@ class RequestContextMiddleware:
                 client = scope.get("client")
                 address = client[0] if client else "unknown"
                 duration_ms = int((time.monotonic() - started) * 1000)
-                logger.info(
+                emit = logger.debug if scope.get("path") in _QUIET_PATHS else logger.info
+                emit(
                     "%s %s %s %dms client=%s request_id=%s",
                     scope.get("method"),
                     scope.get("path"),

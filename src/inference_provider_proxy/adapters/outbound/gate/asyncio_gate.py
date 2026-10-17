@@ -14,6 +14,7 @@ exits the ``slot`` context manager only when it is finished with the provider.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -28,7 +29,13 @@ from inference_provider_proxy.domain.models import ClientIdentity
 if TYPE_CHECKING:
     from inference_provider_proxy.application.ports.clock import ClockPort
 
+logger = logging.getLogger("ipp.gate")
+
 _RETRY_HINT_S = 1.0
+
+# An admission that spent a second or more in the queue is worth an INFO line of
+# its own; anything faster is routine and stays at DEBUG.
+_ADMIT_INFO_WAIT_MS = 1000
 
 
 @dataclass(slots=True)
@@ -90,6 +97,28 @@ class AsyncioGate:
             streaming=streaming,
             max_wait_s=max_wait_s,
         )
+        # Logged here, outside the lock: the consumer knows the ticket, so the
+        # queue internals never have to be touched to describe an admission.
+        if ticket.position is None:
+            logger.debug(
+                "admitted immediately request_id=%s in_flight=%d/%d",
+                request_id,
+                self._in_flight,
+                self._capacity,
+            )
+        elif ticket.wait_ms >= _ADMIT_INFO_WAIT_MS:
+            logger.info(
+                "admitted after waiting request_id=%s waited_ms=%d position=%d",
+                request_id,
+                ticket.wait_ms,
+                ticket.position,
+            )
+        else:
+            logger.debug(
+                "admitted after waiting request_id=%s waited_ms=%d",
+                request_id,
+                ticket.wait_ms,
+            )
         try:
             yield ticket
         finally:
@@ -165,6 +194,12 @@ class AsyncioGate:
                 )
             if len(self._waiters) >= self._max_depth:
                 self._rejected_full_total += 1
+                logger.warning(
+                    "queue full, rejecting request_id=%s depth=%d capacity=%d",
+                    request_id,
+                    len(self._waiters),
+                    self._capacity,
+                )
                 raise ProxyError(
                     kind=ErrorKind.QUEUE_FULL,
                     http_status=429,
@@ -192,6 +227,12 @@ class AsyncioGate:
                 if waiter in self._waiters:
                     self._waiters.remove(waiter)
                     self._rejected_timeout_total += 1
+            logger.warning(
+                "queue wait bound exceeded request_id=%s waited_ms=%d position=%s",
+                request_id,
+                waited_ms,
+                waiter.position,
+            )
             raise ProxyError(
                 kind=ErrorKind.QUEUE_TIMEOUT,
                 http_status=429,
@@ -207,6 +248,7 @@ class AsyncioGate:
                 if waiter in self._waiters:
                     self._waiters.remove(waiter)
                     self._cancelled_while_waiting_total += 1
+                    logger.debug("waiter cancelled while queued request_id=%s", request_id)
                 elif waiter.ticket is not None:
                     # Admitted at the same instant the waiter was cancelled:
                     # hand the slot straight back so it cannot leak.
