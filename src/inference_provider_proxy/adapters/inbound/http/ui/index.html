@@ -153,7 +153,11 @@
                                     style="width: $width_provider_busy%"
                                 ></i></span
                             ><b class="num">$count_provider_busy</b>
-                            <span class="pill pill--ok">expected 0</span>
+                            <span
+                                class="pill pill--ok"
+                                title="non-zero: shared key, not a gate fault"
+                                >expected 0</span
+                            >
                         </div>
                         <div class="kind">
                             <span>queue timeout</span
@@ -222,6 +226,10 @@
                             ><b class="num">$count_unknown</b>
                         </div>
                     </div>
+                    <p class="sub">
+                        provider busy: provider throttling, usually a shared
+                        key, not a gate fault; gate: in-flight / capacity
+                    </p>
                     <h3>Recent episodes</h3>
                     <div class="tablewrap">
                         <table>
@@ -230,6 +238,7 @@
                                     <th>When</th>
                                     <th>Kind</th>
                                     <th>Status</th>
+                                    <th>Gate</th>
                                     <th>Model</th>
                                     <th>Client</th>
                                     <th>Correlation</th>

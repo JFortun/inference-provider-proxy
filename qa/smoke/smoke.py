@@ -103,9 +103,22 @@ async def main() -> None:
 
         by_kind = document["errors"]["by_kind"]
         if by_kind["provider_busy"] != 0:
-            _fail(f"provider_busy is {by_kind['provider_busy']}, expected 0 (SC-002)")
+            _fail(
+                f"provider_busy is {by_kind['provider_busy']}, expected 0 (SC-002): "
+                "provider 429s of in-limit requests, usually a shared key"
+            )
         if document["gate"]["in_flight"] > document["gate"]["capacity"]:
             _fail("gate.in_flight exceeded gate.capacity (SC-003)")
+        # The only true gate fault: an episode recorded over capacity.
+        over_capacity = [
+            episode
+            for episode in document["errors"]["recent"]
+            if episode.get("gate_in_flight") is not None
+            and episode.get("gate_capacity") is not None
+            and episode["gate_in_flight"] > episode["gate_capacity"]
+        ]
+        if over_capacity:
+            _fail(f"an error episode was recorded with the gate over capacity: {over_capacity[0]}")
         print("ok: provider_busy stayed 0 and in-flight never exceeded capacity")
 
     print("SMOKE PASS")

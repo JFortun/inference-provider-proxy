@@ -110,7 +110,7 @@ uvx --from https://github.com/JFortun/inference-provider-proxy/releases/download
 
 `GET /dashboard` returns one document with session identity, subscription status, gate state (including who currently holds the key and the ordered waiters), throughput, latency quantiles, an error breakdown by category, upstream status, per-client activity, and recent requests. Its field names are pinned by `src/inference_provider_proxy/contracts/dashboard.schema.json`.
 
-The field to watch is `errors.by_kind.provider_busy`. It should always be `0`; a non-zero value means the gate failed at its job.
+The field to watch is `errors.by_kind.provider_busy`. It counts provider 429s after the retry budget; non-zero does **not** mean the gate failed: every `errors.recent[]` entry carries the `gate_in_flight` / `gate_capacity` recorded with it, and `in_flight <= capacity` there means another consumer is sharing the key.
 
 ## Two-machine check
 

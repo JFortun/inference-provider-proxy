@@ -101,7 +101,20 @@ async def test_populated_page_renders_every_section_and_escapes(
             "model": "m",
             "client": "host-a",
             "provider_correlation_id": None,
-        }
+            "gate_in_flight": 1,
+            "gate_capacity": 2,
+        },
+        {
+            # The only shape a genuine gate fault would have: over capacity.
+            "at": "2026-01-01T00:00:01Z",
+            "kind": "provider_busy",
+            "status": 429,
+            "model": "m",
+            "client": "host-b",
+            "provider_correlation_id": "corr-9",
+            "gate_in_flight": 3,
+            "gate_capacity": 1,
+        },
     ]
     document["clients"] = [
         {
@@ -167,6 +180,8 @@ async def test_populated_page_renders_every_section_and_escapes(
     assert "&lt;b&gt;model&lt;/b&gt;" in body
     assert "$" not in body
     assert "pill--bad" in body  # provider_busy 2 and status 502
+    # The busy pill explains itself when non-zero (the F1 misreading).
+    assert 'title="Provider 429s of requests admitted within capacity' in body
     assert "2m 05s" in body  # oldest queue wait, minute branch
     assert "4.2 s" in body  # duration above one second
     assert "stream" in body and "aborted" in body
@@ -174,5 +189,10 @@ async def test_populated_page_renders_every_section_and_escapes(
     assert "req-2" in body
     assert "<script>alert(1)</script>" not in body  # request_id, escaped
     assert "upstream_5xx" in body  # episode row kind pill
+    # Gate column on every episode: within capacity is neutral, over capacity (the
+    # only true gate fault) is bad, and the column explains itself on the page.
+    assert ">1/2<" in body
+    assert ">3/1<" in body
+    assert "in-flight / capacity" in body
     assert "curl/8.5" in body
     assert "128k" in body

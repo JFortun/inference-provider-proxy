@@ -107,3 +107,36 @@ async def test_dashboard_reflects_served_traffic(asgi_client_factory) -> None:
     assert document["recent_requests"][0]["status"] == 200
     # Admitted immediately, so there is no wait position to report (SC-008, FR-013).
     assert document["recent_requests"][0]["queue_position"] is None
+
+
+async def test_error_episodes_carry_the_gate_admission_state(asgi_client_factory) -> None:
+    """An episode records the gate's in-flight/capacity, so `provider_busy` reads
+    as "within capacity, not a gate fault" (F1)."""
+
+    def throttled(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/chat/completions"):
+            return httpx.Response(
+                429,
+                headers={"retry-after": "0"},
+                json={"error": {"message": "c", "type": "throttling_error", "code": "429"}},
+            )
+        return httpx.Response(404, json={"error": "not found"})
+
+    harness = build_harness(throttled, max_retries=0)
+    client = asgi_client_factory(harness.app)
+
+    response = await client.post(
+        "/v1/chat/completions",
+        json={"model": "m", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert response.status_code == 429
+
+    document = (await client.get("/dashboard")).json()
+    # Episodes are part of the pinned contract, gate state included.
+    jsonschema.validate(document, SCHEMA)
+
+    episode = document["errors"]["recent"][0]
+    assert episode["kind"] == ErrorKind.PROVIDER_BUSY.value
+    assert episode["gate_in_flight"] == 1
+    assert episode["gate_capacity"] == 1
+    assert episode["gate_in_flight"] <= episode["gate_capacity"]

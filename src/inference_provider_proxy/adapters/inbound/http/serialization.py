@@ -85,6 +85,8 @@ def _error_episode(item: ErrorEpisode) -> dict[str, Any]:
         "model": item.model,
         "client": item.client,
         "provider_correlation_id": item.provider_correlation_id,
+        "gate_in_flight": item.gate_in_flight,
+        "gate_capacity": item.gate_capacity,
     }
 
 

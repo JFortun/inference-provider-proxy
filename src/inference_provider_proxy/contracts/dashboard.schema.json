@@ -228,7 +228,9 @@
         "status",
         "model",
         "client",
-        "provider_correlation_id"
+        "provider_correlation_id",
+        "gate_in_flight",
+        "gate_capacity"
       ],
       "properties": {
         "at": { "$ref": "#/$defs/timestamp" },
@@ -250,7 +252,15 @@
         "status": { "type": ["integer", "null"] },
         "model": { "type": ["string", "null"] },
         "client": { "type": ["string", "null"] },
-        "provider_correlation_id": { "type": ["string", "null"] }
+        "provider_correlation_id": { "type": ["string", "null"] },
+        "gate_in_flight": {
+          "type": ["integer", "null"],
+          "description": "Gate in-flight count when the failure was recorded; <= gate_capacity means the gate never over-admitted."
+        },
+        "gate_capacity": {
+          "type": ["integer", "null"],
+          "description": "Configured gate capacity at that moment; in_flight > gate_capacity is a gate fault."
+        }
       }
     },
     "errors": {
@@ -276,7 +286,10 @@
             "unknown"
           ],
           "properties": {
-            "provider_busy": { "type": "integer" },
+            "provider_busy": {
+              "type": "integer",
+              "description": "Provider 429s after the retry budget. Non-zero is not a gate fault: check errors.recent[].gate_in_flight <= gate_capacity (usually the key is shared outside the proxy)."
+            },
             "queue_timeout": { "type": "integer" },
             "queue_full": { "type": "integer" },
             "upstream_auth": { "type": "integer" },

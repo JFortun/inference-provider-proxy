@@ -249,6 +249,11 @@ async def test_retry_budget_exhaustion_fails_fast(asgi_client_factory) -> None:
     assert response.json()["error"]["type"] == ErrorKind.PROVIDER_BUSY.value
     assert harness.metrics.upstream().retries_total == 2  # exactly the budget
     assert harness.metrics.errors().by_kind[ErrorKind.PROVIDER_BUSY.value] == 1
+    # Recorded while this request itself held the only slot: within capacity, so
+    # the episode documents that the gate never over-admitted (F1 / SC-002).
+    episode = harness.metrics.errors().recent[0]
+    assert episode.kind is ErrorKind.PROVIDER_BUSY
+    assert (episode.gate_in_flight, episode.gate_capacity) == (1, 1)
 
 
 async def test_error_responses_carry_transparency_headers(asgi_client_factory) -> None:

@@ -324,6 +324,10 @@ class ChatService:
         if error is None:
             return
 
+        # in_flight <= capacity on a provider throttle shows the gate never
+        # over-admitted, so `provider_busy` is not read as a gate fault (FR-008:
+        # the slot is still held here; a gate rejection is recorded pre-admission).
+        gate = self._gate.snapshot()
         self._metrics.record_error(
             ErrorEpisode(
                 at=self._now(),
@@ -332,6 +336,8 @@ class ChatService:
                 model=request.model,
                 client=request.client.address,
                 provider_correlation_id=error.provider_correlation_id,
+                gate_in_flight=gate.in_flight,
+                gate_capacity=gate.capacity,
             )
         )
         if error.provider_status is not None or error.kind in {

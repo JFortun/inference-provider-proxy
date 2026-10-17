@@ -69,8 +69,9 @@ def _time(value: str | None) -> str:
     return value[11:19]
 
 
-def _pill(text: str, tone: str) -> str:
-    return f'<span class="pill pill--{tone}">{text}</span>'
+def _pill(text: str, tone: str, *, title: str | None = None) -> str:
+    attr = "" if title is None else f' title="{escape(title, quote=True)}"'
+    return f'<span class="pill pill--{tone}"{attr}>{text}</span>'
 
 
 def _status_pill(status: int) -> str:
@@ -115,11 +116,21 @@ def _waiting_row(item: dict[str, Any], oldest: float) -> str:
     )
 
 
+def _gate_cell(in_flight: int | None, capacity: int | None) -> str:
+    """``in_flight/capacity`` at failure time: over capacity (the only real
+    gate fault) renders bad, within capacity renders neutral."""
+    text = "—" if in_flight is None or capacity is None else f"{in_flight}/{capacity}"
+    over = bool(in_flight is not None and capacity is not None and in_flight > capacity)
+    return _pill(text, "bad" if over else "neutral")
+
+
 def _episode_row(item: dict[str, Any]) -> str:
     tone = "bad" if item["kind"] in _HARD_ERRORS else "warn"
     return (
         f'<tr><td class="mono">{_time(item["at"])}</td><td>{_pill(_e(item["kind"]), tone)}</td>'
-        f'<td class="num">{_e(item["status"])}</td><td>{_e(item["model"])}</td>'
+        f'<td class="num">{_e(item["status"])}</td>'
+        f'<td class="num">{_gate_cell(item["gate_in_flight"], item["gate_capacity"])}</td>'
+        f"<td>{_e(item['model'])}</td>"
         f'<td>{_e(item["client"])}</td><td class="mono">{_e(item["provider_correlation_id"])}</td>'
         "</tr>"
     )
@@ -212,9 +223,16 @@ def render_dashboard(document: dict[str, Any]) -> str:
         "prompt_tokens": f"{throughput['prompt_tokens_total']:,}",
         "completion_tokens": f"{throughput['completion_tokens_total']:,}",
         "errors_total": str(errors["total"]),
-        "busy_pill": _pill("provider busy 0 · ok", "ok")
-        if busy == 0
-        else _pill(f"provider busy {busy}", "bad"),
+        "busy_pill": (
+            _pill("provider busy 0 · ok", "ok")
+            if busy == 0
+            else _pill(
+                f"provider busy {busy}",
+                "bad",
+                title="Provider 429s of requests admitted within capacity, "
+                "not gate faults; the episodes table shows each in-flight/capacity.",
+            )
+        ),
         "retries": str(upstream["retries_total"]),
         "sub_status": _e(subscription["status"]),
         "sub_pool": _e(subscription["pool"]),

@@ -113,7 +113,12 @@ class LatencySnapshot:
 
 @dataclass(frozen=True, slots=True)
 class ErrorEpisode:
-    """One classified failure (FR-024, FR-025)."""
+    """One classified failure (FR-024, FR-025).
+
+    ``gate_in_flight``/``gate_capacity`` are the admission state at record time:
+    ``in_flight <= capacity`` means the gate never over-admitted, which is what
+    separates a provider throttle of an in-limit request from a real gate fault.
+    """
 
     at: datetime
     kind: ErrorKind
@@ -121,6 +126,8 @@ class ErrorEpisode:
     model: str | None = None
     client: str | None = None
     provider_correlation_id: str | None = None
+    gate_in_flight: int | None = None
+    gate_capacity: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
