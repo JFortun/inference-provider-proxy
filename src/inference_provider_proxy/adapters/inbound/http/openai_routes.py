@@ -6,6 +6,9 @@ route requires a credential (FR-016).
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+from collections.abc import Awaitable
 from uuid import uuid4
 
 from fastapi import APIRouter, Request
@@ -19,6 +22,59 @@ from inference_provider_proxy.domain.errors import ErrorKind, ProxyError
 from inference_provider_proxy.domain.models import ChatRequest, ClientIdentity
 
 router = APIRouter()
+
+# How often the pre-response watcher asks whether the client is still there.
+_DISCONNECT_POLL_S = 0.25
+
+
+async def _discard[T](task: asyncio.Future[T]) -> None:
+    """Cancel ``task`` if it is still running and wait for it to unwind."""
+    if not task.done():
+        task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+async def _await_pre_response[T](request: Request, awaitable: Awaitable[T]) -> T:
+    """Await a chat call, aborting it if the client disconnects first.
+
+    Nothing else reads the receive channel before the response starts, so the
+    watcher may poll ``is_disconnected()``; it stops at the response, where
+    Starlette's own disconnect handling takes over (R2).
+    """
+    call = asyncio.ensure_future(awaitable)
+    gone = False
+
+    async def _watch() -> None:
+        nonlocal gone
+        while not call.done():
+            if await request.is_disconnected():
+                gone = True
+                call.cancel()
+                return
+            await asyncio.sleep(_DISCONNECT_POLL_S)
+
+    watcher = asyncio.ensure_future(_watch())
+    try:
+        return await call
+    except asyncio.CancelledError:
+        if not gone:
+            # Cancelled from outside (shutdown): stop the use case too, then let
+            # the cancellation through untouched.
+            await _discard(call)
+            raise
+        # The client is gone: answer in the dialect (499) so the access log, the
+        # envelope and the dashboard agree, instead of handing the server a
+        # traceback for a socket nobody is reading.
+        raise ProxyError(
+            kind=ErrorKind.CLIENT_ABORTED,
+            http_status=499,
+            code="client_aborted",
+            message="The client disconnected before the response completed.",
+            retryable=False,
+        ) from None
+    finally:
+        await _discard(watcher)
 
 
 def _client_identity(request: Request) -> ClientIdentity:
@@ -71,13 +127,10 @@ async def chat_completions(request: Request) -> Response:
     )
 
     if chat_request.stream:
-        result = await services.chat.stream(chat_request)
-        # The chunk generator is handed to Starlette unwrapped on purpose. When
-        # the client disconnects, Starlette raises CancelledError/GeneratorExit
-        # into it, which the chat service turns into an eager upstream cancel
-        # and a bounded slot release (FR-010, research.md R2). Wrapping it here
-        # to poll ``request.is_disconnected()`` would compete for the
-        # single-consumer ASGI receive channel and could weaken that signal.
+        result = await _await_pre_response(request, services.chat.stream(chat_request))
+        # Handed to Starlette unwrapped: the watcher above has stopped, so the
+        # single receive channel is free for Starlette's own disconnect handling
+        # from the first chunk onwards (research.md R2).
         return StreamingResponse(
             result.chunks,
             media_type=result.media_type,
@@ -86,7 +139,7 @@ async def chat_completions(request: Request) -> Response:
             ),
         )
 
-    completed = await services.chat.complete(chat_request)
+    completed = await _await_pre_response(request, services.chat.complete(chat_request))
     return JSONResponse(
         status_code=completed.status_code,
         content=completed.payload,

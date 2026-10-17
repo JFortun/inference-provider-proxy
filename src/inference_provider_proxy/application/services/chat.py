@@ -66,6 +66,12 @@ class ChatService:
         try:
             ticket = await slot_cm.__aenter__()
             completion = await self._call_with_retries(request.request_id, request.body)
+        except asyncio.CancelledError:
+            # The client left before the response started (FR-009, FR-010): record
+            # the abort rather than let the request vanish or be counted as
+            # completed; the finally below still frees the slot.
+            self._record_client_gone(request, ticket, started, streaming=False)
+            raise
         except ProxyError as exc:
             # Also catches a gate rejection (queue full or wait bound exceeded),
             # which never ran: it is still a classified failure and must be
@@ -110,6 +116,9 @@ class ChatService:
         )
         try:
             ticket = await slot_cm.__aenter__()
+        except asyncio.CancelledError:
+            self._record_client_gone(request, None, started, streaming=True)
+            raise
         except ProxyError as exc:
             # A gate rejection consumes no capacity and no upstream call, but it
             # is still a classified failure (FR-020, FR-024).
@@ -120,6 +129,10 @@ class ChatService:
                 request.request_id,
                 lambda: self._open_stream_once(request.body),
             )
+        except asyncio.CancelledError:
+            await self._close(slot_cm)
+            self._record_client_gone(request, ticket, started, streaming=True)
+            raise
         except ProxyError as exc:
             await self._close(slot_cm)
             self._record_failure(request, exc, ticket, started, streaming=True)
@@ -355,6 +368,7 @@ class ChatService:
         *,
         streaming: bool,
         ttfb_ms: int | None = None,
+        aborted: bool = False,
     ) -> None:
         self._emit(
             request,
@@ -364,6 +378,25 @@ class ChatService:
             ticket=ticket,
             error=error,
             ttfb_ms=ttfb_ms,
+            aborted=aborted,
+        )
+
+    def _record_client_gone(
+        self,
+        request: ChatRequest,
+        ticket: QueueTicket | None,
+        started: float,
+        *,
+        streaming: bool,
+    ) -> None:
+        """Record a disconnect seen before the response started (FR-009, FR-010)."""
+        logger.warning(
+            "client disconnected while %s request_id=%s",
+            "queued" if ticket is None else "in flight",
+            request.request_id,
+        )
+        self._record_failure(
+            request, self._aborted_error(), ticket, started, streaming=streaming, aborted=True
         )
 
     async def _abort_upstream(self, stream_cm: Any) -> None:
