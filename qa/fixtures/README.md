@@ -3,7 +3,7 @@
 Bodies captured from the live provider as described in `PLAN.md` §3. They are
 frozen here so the error-mapping tests (T045) do not depend on the provider
 being reachable. `code` values are strings, exactly as the provider returns them
-(`PLAN.md` §3.1) — matching must stay string-safe.
+(`PLAN.md` §3.1): matching must stay string-safe.
 
 | File | Status | Shape | Expected category |
 |------|--------|-------|-------------------|
