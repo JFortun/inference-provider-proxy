@@ -122,8 +122,12 @@ async def test_queued_client_disconnect_frees_the_queue_and_is_recorded(
         assert sent[0]["status"] == 499  # answered in the dialect
         metrics = harness.metrics
         assert metrics.errors().by_kind[ErrorKind.CLIENT_ABORTED.value] == 1
-        assert metrics.throughput().requests_aborted == 1
-        assert metrics.throughput().requests_completed == 0
+        throughput = metrics.throughput()
+        assert throughput.requests_aborted == 1
+        assert throughput.requests_completed == 0
+        rows = metrics.clients()  # F4: the two sections label the abort alike
+        assert sum(row.failed for row in rows) == throughput.requests_failed
+        assert sum(row.aborted for row in rows) == throughput.requests_aborted
         record = metrics.recent_requests()[0]
         assert (record.status, record.aborted, record.streaming) == (499, True, True)
         assert "client disconnected while queued" in caplog.text

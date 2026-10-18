@@ -110,10 +110,10 @@ class MemoryMetrics:
 
         agg = self._clients.setdefault(record.client, _ClientAgg())
         agg.requests += 1
-        if record.error_kind is not None:
-            agg.failed += 1
         if record.aborted:
             agg.aborted += 1
+        elif record.error_kind is not None:
+            agg.failed += 1
         agg.queue_wait_sum_ms += record.queue_wait_ms
         agg.duration_sum_ms += record.duration_ms
         agg.last_seen_at = record.at

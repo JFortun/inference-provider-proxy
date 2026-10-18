@@ -354,8 +354,14 @@
         "client": { "type": "string" },
         "user_agent": { "type": "string" },
         "requests": { "type": "integer" },
-        "failed": { "type": "integer" },
-        "aborted": { "type": "integer" },
+        "failed": {
+          "type": "integer",
+          "description": "Answered errors only; aborts are counted under aborted, never both. Matches throughput.requests_failed."
+        },
+        "aborted": {
+          "type": "integer",
+          "description": "Requests whose client left before completion. Matches throughput.requests_aborted."
+        },
         "avg_queue_wait_ms": { "type": "number" },
         "avg_duration_ms": { "type": "number" },
         "last_seen_at": {
