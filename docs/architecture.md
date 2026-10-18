@@ -62,12 +62,12 @@ the chunk iterator finishes or is closed.
 
 ## Rules
 
-| Layer                | May depend on           | Must never depend on             |
-| -------------------- | ----------------------- | -------------------------------- |
-| `domain/`            | standard library only   | anything above it, any framework |
-| `application/`       | `domain`                | FastAPI, httpx, adapters         |
-| `adapters/inbound/`  | `application`, `domain` | `adapters/outbound/`             |
-| `adapters/outbound/` | `application`, `domain` | `adapters/inbound/`              |
+| Layer                | May depend on           | Must never depend on                     |
+| -------------------- | ----------------------- | ---------------------------------------- |
+| `domain/`            | standard library only   | anything above it, any framework         |
+| `application/`       | `domain`                | FastAPI, httpx, adapters                 |
+| `adapters/inbound/`  | `application`, `domain` | `adapters/outbound/`                     |
+| `adapters/outbound/` | `application`, `domain` | `adapters/inbound/`                      |
 | `main.py`            | everything              | nothing (it is the one place allowed to) |
 
 1. **Layering**: dependencies point inward only: `adapters → application → domain`.
