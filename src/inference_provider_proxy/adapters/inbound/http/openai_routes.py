@@ -125,6 +125,9 @@ async def chat_completions(request: Request) -> Response:
         # The body is forwarded verbatim: the proxy never inspects it (FR-001).
         body=body,
     )
+    # From here the chat service owns this request's dashboard record; anything
+    # raised earlier is recorded by the error handler instead (FR-020).
+    request.state.chat_entered = True
 
     if chat_request.stream:
         result = await _await_pre_response(request, services.chat.stream(chat_request))

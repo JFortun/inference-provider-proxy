@@ -82,6 +82,8 @@ def build_services(settings: Settings) -> tuple[Services, SubscriptionPoller]:
         chat=chat,
         catalog=catalog,
         dashboard=dashboard,
+        metrics=metrics,
+        clock=clock,
     )
     poller = SubscriptionPoller(
         provider=provider,

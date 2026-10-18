@@ -98,6 +98,8 @@ def build_harness(
         chat=chat,
         catalog=catalog,
         dashboard=dashboard,
+        metrics=metrics,
+        clock=real_clock,
     )
     return Harness(
         app=create_app(services),

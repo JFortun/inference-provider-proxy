@@ -14,11 +14,15 @@ from __future__ import annotations
 
 import logging
 import math
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
+from inference_provider_proxy.adapters.inbound.http.deps import services_of
 from inference_provider_proxy.domain.errors import ErrorKind, ProxyError
+from inference_provider_proxy.domain.metrics import ErrorEpisode, RequestRecord
+from inference_provider_proxy.domain.models import ClientIdentity
 
 _PASSTHROUGH_KINDS = frozenset({ErrorKind.UNKNOWN, ErrorKind.NOT_RESERVED})
 
@@ -92,9 +96,55 @@ def _log(request: Request, error: ProxyError) -> None:
         logger.debug("passing the provider body through untouched: %s", preview)
 
 
+def _record_route_failure(request: Request, error: ProxyError) -> None:
+    """Record a failure the chat service never saw (FR-020, FR-024).
+
+    Body rejections are raised before ``ChatRequest`` exists, so nothing on the
+    chat path can record them: the access log counts them but the dashboard did
+    not. Chat POSTs only, and only when the chat service was never entered
+    (``chat_entered``), since everything it enters, it records itself.
+    """
+    if getattr(request.state, "chat_entered", False):
+        return
+    if request.url.path != "/v1/chat/completions":
+        return
+    services = services_of(request)
+    address = request.client.host if request.client else "unknown"
+    now = services.clock.now()
+    services.metrics.note_client(
+        ClientIdentity(address=address, user_agent=request.headers.get("user-agent") or "unknown")
+    )
+    services.metrics.record_request(
+        RequestRecord(
+            request_id=getattr(request.state, "request_id", "") or uuid4().hex,
+            at=now,
+            client=address,
+            model="",  # the body never parsed, so no model exists
+            streaming=False,
+            status=error.http_status,
+            queue_wait_ms=0,
+            queue_position=None,
+            duration_ms=0,
+            error_kind=error.kind,
+        )
+    )
+    # Gate state stays null: the gate was never entered.
+    services.metrics.record_error(
+        ErrorEpisode(
+            at=now,
+            kind=error.kind,
+            status=error.http_status,
+            model=None,
+            client=address,
+            provider_correlation_id=error.provider_correlation_id,
+        )
+    )
+
+
 async def proxy_error_handler(request: Request, exc: Exception) -> Response:
     assert isinstance(exc, ProxyError)
     _log(request, exc)
+    _record_route_failure(request, exc)
     # Transparency headers are documented for *all* responses, including errors
     # (contracts/openai-compatible.md), so they are emitted here as well as on
     # the success path (FR-013).

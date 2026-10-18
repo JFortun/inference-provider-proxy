@@ -9,7 +9,7 @@ from importlib.resources import files
 import httpx
 import jsonschema
 
-from inference_provider_proxy.domain.errors import ErrorKind
+from inference_provider_proxy.domain.errors import ErrorKind, ProxyError
 from inference_provider_proxy.domain.models import ClientIdentity
 from qa.integration.conftest import build_harness
 
@@ -140,3 +140,83 @@ async def test_error_episodes_carry_the_gate_admission_state(asgi_client_factory
     assert episode["gate_in_flight"] == 1
     assert episode["gate_capacity"] == 1
     assert episode["gate_in_flight"] <= episode["gate_capacity"]
+
+
+async def test_route_rejections_before_the_chat_service_reach_the_dashboard(
+    asgi_client_factory,
+) -> None:
+    """Body rejections are logged and answered, so they must also be counted (F3)."""
+    harness = build_harness(_handler)
+    client = asgi_client_factory(harness.app)
+
+    for payload in ("{not json", "[1,2,3]"):
+        response = await client.post(
+            "/v1/chat/completions",
+            content=payload,
+            headers={"content-type": "application/json"},
+        )
+        assert response.status_code == 400
+
+    document = (await client.get("/dashboard")).json()
+    jsonschema.validate(document, SCHEMA)
+
+    rows = [row for row in document["recent_requests"] if row["status"] == 400]
+    assert len(rows) == 2  # both rejections, matching the access log
+    assert {row["model"] for row in rows} == {""}  # no ChatRequest existed
+    throughput = document["throughput"]
+    assert throughput["requests_total"] == 2
+    assert throughput["requests_failed"] == 2
+    assert document["errors"]["by_kind"]["unknown"] == 2
+    assert document["errors"]["total"] == 2
+    episode = document["errors"]["recent"][0]
+    assert episode["model"] is None
+    assert (episode["gate_in_flight"], episode["gate_capacity"]) == (None, None)
+    assert throughput["requests_total"] == (
+        throughput["requests_completed"]
+        + throughput["requests_failed"]
+        + throughput["requests_aborted"]
+    )
+
+
+async def test_only_never_entered_chat_posts_are_recorded(asgi_client_factory) -> None:
+    """No double count for chat-path failures; other routes stay out of chat totals."""
+    harness = build_harness(lambda request: httpx.Response(404, json={"error": "not found"}))
+    client = asgi_client_factory(harness.app)
+
+    response = await client.post(
+        "/v1/chat/completions", json={"model": "m", "messages": [{"role": "user", "content": "hi"}]}
+    )
+    assert response.status_code == 404  # passthrough, recorded by the chat service
+    document = (await client.get("/dashboard")).json()
+    assert document["throughput"]["requests_total"] == 1  # once, not twice
+    assert document["errors"]["by_kind"]["unknown"] == 1
+    assert document["errors"]["total"] == 1
+
+    # A failure raised on another route is not chat traffic.
+    harness.app.state.services.catalog = _FailingCatalog()
+    assert (await client.get("/v1/models")).status_code == 502
+    document = (await client.get("/dashboard")).json()
+    assert document["throughput"]["requests_total"] == 1
+    assert document["errors"]["total"] == 1
+
+    # While a rejection the chat service never entered still lands.
+    response = await client.post(
+        "/v1/chat/completions",
+        content="{not json",
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 400
+    document = (await client.get("/dashboard")).json()
+    assert document["throughput"]["requests_total"] == 2
+    assert document["errors"]["by_kind"]["unknown"] == 2
+
+
+class _FailingCatalog:
+    async def models(self):
+        raise ProxyError(
+            kind=ErrorKind.UPSTREAM_UNREACHABLE,
+            http_status=502,
+            code="upstream_unreachable",
+            message="provider is down",
+            retryable=False,
+        )

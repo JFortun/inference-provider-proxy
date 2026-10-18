@@ -13,11 +13,13 @@ from typing import TYPE_CHECKING
 from fastapi import Request
 
 if TYPE_CHECKING:
+    from inference_provider_proxy.application.ports.clock import ClockPort
     from inference_provider_proxy.application.ports.inbound import (
         CatalogUseCase,
         ChatCompletionUseCase,
         DashboardUseCase,
     )
+    from inference_provider_proxy.application.ports.metrics import MetricsPort
     from inference_provider_proxy.application.ports.provider import LLMProviderPort
     from inference_provider_proxy.config import Settings
 
@@ -31,6 +33,8 @@ class Services:
     chat: ChatCompletionUseCase
     catalog: CatalogUseCase
     dashboard: DashboardUseCase
+    metrics: MetricsPort
+    clock: ClockPort
 
 
 def services_of(request: Request) -> Services:
