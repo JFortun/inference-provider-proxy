@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import httpx
 
+from inference_provider_proxy.adapters.outbound.subscription.poller import SubscriptionPoller
 from inference_provider_proxy.domain.models import ClientIdentity
 from qa.integration.conftest import FakeClock, build_harness
 
@@ -186,3 +187,32 @@ async def test_metadata_routes_forward_the_source_payloads(asgi_client_factory) 
     # One timestamp dialect: same Z suffix the dashboard renders.
     assert usage["expires_at"] == "2030-01-01T00:00:00Z"
     assert "+00:00" not in usage["expires_at"]
+
+
+async def test_background_refresh_populates_the_dashboard_without_a_client(
+    asgi_client_factory,
+) -> None:
+    """A fresh proxy shows the real catalogue once the poller ran, not "0 models" (F6)."""
+    handler, calls = _metadata_handler()
+    harness = build_harness(handler)
+    client = asgi_client_factory(harness.app)
+
+    document = (await client.get("/dashboard")).json()
+    assert document["upstream"]["models"] == []  # nothing fetched yet
+    assert document["upstream"]["models_checked_at"] is None
+
+    poller = SubscriptionPoller(
+        provider=harness.provider,
+        subscription=harness.metrics,
+        interval_s=30.0,
+        clock=FakeClock(),
+    )
+    await poller.refresh_once()
+
+    document = (await client.get("/dashboard")).json()
+    assert [model["id"] for model in document["upstream"]["models"]] == [
+        "deepseek-v4.1-flash",
+        "mimo-v2.5",
+    ]
+    assert document["upstream"]["models_checked_at"] is not None
+    assert calls["models"] == 1  # only the poller's fetch; the client route never ran

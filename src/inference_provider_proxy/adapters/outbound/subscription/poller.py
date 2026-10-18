@@ -1,8 +1,9 @@
-"""Background subscription refresher (FR-015, T041).
+"""Background upstream refresher (FR-015, T041).
 
-Refreshes the entitlement view on a timer without ever touching the gate, so it
-can never consume chat capacity (FR-014). When a refresh fails the last known
-value is kept and marked stale rather than being cleared.
+Refreshes the entitlement view and the model catalogue on a timer without ever
+touching the gate, so it can never consume chat capacity (FR-014). When a
+refresh fails the last known value is kept and marked stale rather than being
+cleared.
 
 A dead provider must not bury the log: the first failure and every tenth after
 it are WARNINGs, the rest are DEBUG, and recovery is announced once.
@@ -23,7 +24,7 @@ logger = logging.getLogger("ipp.subscription")
 
 
 class SubscriptionPoller:
-    """Periodically refreshes ``/v1/usage`` state in the background."""
+    """Periodically refreshes the upstream view: usage and the model catalogue."""
 
     def __init__(
         self,
@@ -61,6 +62,7 @@ class SubscriptionPoller:
         """One refresh attempt; failures mark the view stale (FR-015)."""
         try:
             info = await self._provider.fetch_usage()
+            models = await self._provider.list_models()
         except Exception as exc:  # noqa: BLE001 - any failure means "stale"
             self._consecutive_failures += 1
             failures = self._consecutive_failures
@@ -76,6 +78,8 @@ class SubscriptionPoller:
             self._consecutive_failures = 0
         logger.debug("subscription refresh ok pool=%s stale=%s", info.pool, info.stale)
         self._subscription.update(info)
+        # The dashboard's catalogue must not depend on a client asking (FR-020).
+        self._subscription.set_models(models, checked_at=self._clock.now())
 
     async def _run(self) -> None:
         while True:

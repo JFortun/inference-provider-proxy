@@ -115,15 +115,15 @@ async def test_start_is_idempotent_and_stop_cancels_the_loop() -> None:
     try:
         await poller.start()
         await poller.start()  # a second start must not spawn a second refresh task
-        for _ in range(50):
-            if calls["n"]:
+        for _ in range(200):
+            if metrics.current().pool == "core":  # one refresh fully completed
                 break
             await asyncio.sleep(0)
         await poller.stop()
     finally:
         await provider.aclose()
 
-    assert calls["n"] == 1
+    assert calls["n"] == 2  # one refresh = usage + models, not a second task
     assert metrics.current().pool == "core"
 
 
@@ -133,3 +133,56 @@ async def test_stop_without_start_is_a_no_op() -> None:
         await _poller(provider, _metrics()).stop()
     finally:
         await provider.aclose()
+
+
+async def test_refresh_once_also_populates_the_model_catalogue() -> None:
+    usage = (FIXTURES / "usage_200.json").read_bytes()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/v1/models"):
+            return httpx.Response(
+                200, json={"data": [{"id": "m", "object": "model", "context_length": 1}]}
+            )
+        return httpx.Response(200, content=usage)
+
+    provider = _provider(handler)
+    metrics = _metrics()
+    try:
+        await _poller(provider, metrics).refresh_once()
+    finally:
+        await provider.aclose()
+
+    upstream = metrics.upstream()
+    assert [model.id for model in upstream.models] == ["m"]
+    assert upstream.models_checked_at is not None  # the poller's own check
+    assert metrics.current().pool == "core"  # usage refreshed in the same pass
+
+
+async def test_failed_refresh_keeps_the_last_model_catalogue() -> None:
+    usage = (FIXTURES / "usage_200.json").read_bytes()
+    successes = {"usage": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/v1/models"):
+            return httpx.Response(
+                200, json={"data": [{"id": "m", "object": "model", "context_length": 1}]}
+            )
+        if successes["usage"] < 1:
+            successes["usage"] += 1
+            return httpx.Response(200, content=usage)
+        return httpx.Response(500, json={"error": {"message": "boom", "type": "internal"}})
+
+    provider = _provider(handler)
+    metrics = _metrics()
+    poller = _poller(provider, metrics)
+    try:
+        await poller.refresh_once()  # catalogue populated
+        checked = metrics.upstream().models_checked_at
+        await poller.refresh_once()  # usage fails now; models are never cleared
+    finally:
+        await provider.aclose()
+
+    upstream = metrics.upstream()
+    assert [model.id for model in upstream.models] == ["m"]  # last known value kept
+    assert upstream.models_checked_at == checked  # not re-stamped
+    assert metrics.current().stale is True

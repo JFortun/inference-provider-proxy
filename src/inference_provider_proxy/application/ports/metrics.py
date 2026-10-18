@@ -48,10 +48,12 @@ class MetricsPort(Protocol):
 
 
 class SubscriptionPort(Protocol):
-    """Holds the latest subscription/entitlement view (FR-015)."""
+    """Holds the latest upstream view: entitlement plus the model catalogue (FR-015)."""
 
     def current(self) -> SubscriptionInfo: ...
 
     def update(self, info: SubscriptionInfo) -> None: ...
 
     def mark_stale(self, stale: bool = True) -> None: ...
+
+    def set_models(self, models: list[ModelInfo], *, checked_at: datetime) -> None: ...
