@@ -1,4 +1,4 @@
-"""Driven ports that exist only under ``TYPE_CHECKING`` stay importable (FR-015)."""
+"""Driven ports that exist only under ``TYPE_CHECKING`` stay importable."""
 
 from __future__ import annotations
 

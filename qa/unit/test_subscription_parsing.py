@@ -1,4 +1,4 @@
-"""Provider payload parsing against frozen live bodies (R3, FR-015)."""
+"""Provider payload parsing against frozen live bodies."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ async def test_usage_nested_payload_is_understood() -> None:
     assert info.expires_at.year == 2026
     assert info.seconds_until_expiry is not None
     assert info.stale is False
-    assert info.success is True  # the envelope flag survives parsing (F5)
+    assert info.success is True  # the envelope flag survives parsing
     assert info.key == {
         "name": "Core key",
         "type": "subscription",
@@ -89,7 +89,7 @@ async def test_models_are_parsed_with_context_length() -> None:
         "created",
         "owned_by",
         "type",
-    }  # parsing keeps the source object verbatim (F5)
+    }  # parsing keeps the source object verbatim
 
 
 async def test_non_json_usage_body_marks_stale() -> None:

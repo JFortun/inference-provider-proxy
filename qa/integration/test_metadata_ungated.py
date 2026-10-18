@@ -1,4 +1,4 @@
-"""Metadata is served ungated and cached (US4 / T038)."""
+"""Metadata is served ungated and cached."""
 
 from __future__ import annotations
 
@@ -118,7 +118,7 @@ async def test_cache_entry_expires_after_the_ttl(asgi_client_factory) -> None:
 
 
 async def test_metadata_routes_forward_the_source_payloads(asgi_client_factory) -> None:
-    """Nothing is dropped or re-dialected between the provider and the client (F5)."""
+    """Nothing is dropped or re-dialected between the provider and the client."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -192,7 +192,7 @@ async def test_metadata_routes_forward_the_source_payloads(asgi_client_factory) 
 async def test_background_refresh_populates_the_dashboard_without_a_client(
     asgi_client_factory,
 ) -> None:
-    """A fresh proxy shows the real catalogue once the poller ran, not "0 models" (F6)."""
+    """A fresh proxy shows the real catalogue once the poller ran, not "0 models"."""
     handler, calls = _metadata_handler()
     harness = build_harness(handler)
     client = asgi_client_factory(harness.app)

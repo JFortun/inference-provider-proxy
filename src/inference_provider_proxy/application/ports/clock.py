@@ -1,4 +1,4 @@
-"""Driven port for time, so the gate is unit-testable against a fake clock (R1)."""
+"""Driven port for time, so the gate is unit-testable against a fake clock."""
 
 from __future__ import annotations
 

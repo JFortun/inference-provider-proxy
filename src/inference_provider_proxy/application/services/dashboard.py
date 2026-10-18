@@ -1,7 +1,7 @@
-"""Assembles the single dashboard document (FR-019–FR-023).
+"""Assembles the single dashboard document.
 
 Every read is from in-memory state and synchronous, so the document is
-retrievable while the key is busy and is never blocked by the gate (FR-021).
+retrievable while the key is busy and is never blocked by the gate.
 """
 
 from __future__ import annotations

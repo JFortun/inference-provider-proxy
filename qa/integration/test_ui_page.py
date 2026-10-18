@@ -180,7 +180,7 @@ async def test_populated_page_renders_every_section_and_escapes(
     assert "&lt;b&gt;model&lt;/b&gt;" in body
     assert "$" not in body
     assert "pill--bad" in body  # provider_busy 2 and status 502
-    # The busy pill explains itself when non-zero (the F1 misreading).
+    # The busy pill explains itself when non-zero.
     assert 'title="Provider 429s of requests admitted within capacity' in body
     assert "2m 05s" in body  # oldest queue wait, minute branch
     assert "4.2 s" in body  # duration above one second

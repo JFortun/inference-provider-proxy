@@ -1,6 +1,6 @@
-"""Error classification covers every row of the mapping contract (US6 / T045).
+"""Error classification covers every row of the mapping contract.
 
-Driven from the frozen probe fixtures (T046) so it never needs the provider.
+Driven from the frozen probe fixtures so it never needs the provider.
 """
 
 from __future__ import annotations

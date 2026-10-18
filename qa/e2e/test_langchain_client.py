@@ -1,4 +1,4 @@
-"""End-to-end checks driven by a *real* LangChain client (R10 / T052).
+"""End-to-end checks driven by a *real* LangChain client.
 
 These talk to a running proxy and therefore to the real provider, so they are
 gated behind ``--run-e2e`` (see ``qa/conftest.py``) and are serial and slow by

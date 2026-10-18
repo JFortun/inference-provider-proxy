@@ -29,7 +29,7 @@ class ChatRequest:
     client: ClientIdentity
     model: str
     stream: bool = False
-    # The original body, forwarded to the provider verbatim (FR-001).
+    # The original body, forwarded to the provider verbatim.
     body: dict[str, Any] = field(default_factory=dict)
 
 
@@ -45,7 +45,7 @@ class ModelInfo:
 
 @dataclass(frozen=True, slots=True)
 class SubscriptionInfo:
-    """Provider entitlement, refreshed by the background poller (FR-015)."""
+    """Provider entitlement, refreshed by the background poller."""
 
     pool: str | None = None
     status: str | None = None

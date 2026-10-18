@@ -1,4 +1,4 @@
-"""FastAPI app factory and route wiring (FR-003, FR-016, FR-021)."""
+"""FastAPI app factory and route wiring."""
 
 from __future__ import annotations
 

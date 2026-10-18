@@ -1,4 +1,4 @@
-"""Driven ports for metrics aggregation and subscription state (FR-015, FR-031)."""
+"""Driven ports for metrics aggregation and subscription state."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class MetricsPort(Protocol):
-    """In-memory aggregation over the process session (R6)."""
+    """In-memory aggregation over the process session."""
 
     def note_client(self, client: ClientIdentity) -> None: ...
 
@@ -48,7 +48,7 @@ class MetricsPort(Protocol):
 
 
 class SubscriptionPort(Protocol):
-    """Holds the latest upstream view: entitlement plus the model catalogue (FR-015)."""
+    """Holds the latest upstream view: entitlement plus the model catalogue."""
 
     def current(self) -> SubscriptionInfo: ...
 

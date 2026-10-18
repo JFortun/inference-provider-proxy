@@ -1,11 +1,11 @@
 """Request-id assignment and redacted access logging.
 
 Pure ASGI middleware: it must not buffer the response body, or streaming and
-client-disconnect detection would break (R2). There is **no authentication**
-(FR-016); the only credential the proxy holds is the outbound provider key,
-which is never logged or echoed (FR-018). Because we log only method, path,
-status, client address, and duration — never headers or bodies — the provider
-key cannot leak into a log record.
+client-disconnect detection would break. There is **no authentication**; the
+only credential the proxy holds is the outbound provider key, which is never
+logged or echoed. Because we log only method, path, status, client address, and
+duration — never headers or bodies — the provider key cannot leak into a log
+record.
 """
 
 from __future__ import annotations

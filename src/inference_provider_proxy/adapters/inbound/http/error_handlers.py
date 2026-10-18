@@ -1,4 +1,4 @@
-"""``ProxyError`` -> OpenAI-shaped envelope (FR-025, FR-029), plus one log line.
+"""``ProxyError`` -> OpenAI-shaped envelope, plus one log line.
 
 Registered as a skeleton here; the per-category construction of ``ProxyError``
 happens where each condition is detected (the provider adapter and the chat
@@ -6,7 +6,7 @@ service), so this module only renders what it is given — and says what it was
 given, at a level that matches the taxonomy: client mistakes stay at INFO, load
 shedding is a WARNING, provider trouble is an ERROR. Conditions whose shape the
 proxy does not fully understand are passed through untouched rather than
-rewritten (FR-025, FR-026); anything that reaches the server without being
+rewritten; anything that reaches the server without being
 classified at all is logged with its traceback and rendered as a 500.
 """
 
@@ -46,7 +46,7 @@ logger = logging.getLogger("ipp.http")
 def queue_transparency_headers(
     queue_wait_ms: int | None, queue_position: int | None
 ) -> dict[str, str]:
-    """Queue transparency headers, on success and error responses alike (FR-013)."""
+    """Queue transparency headers, on success and error responses alike."""
     headers = {"X-Queue-Wait-Ms": str(queue_wait_ms or 0)}
     if queue_position is not None:
         headers["X-Queue-Position"] = str(queue_position)
@@ -79,7 +79,7 @@ def _log(request: Request, error: ProxyError) -> None:
 
     The provider's own body, when it is passed through verbatim, is only ever
     quoted at DEBUG and truncated, so an operator reading at INFO sees ids and
-    statuses and nothing that could hold a credential (FR-018).
+    statuses and nothing that could hold a credential.
     """
     logger.log(
         _level_for(error),
@@ -97,7 +97,7 @@ def _log(request: Request, error: ProxyError) -> None:
 
 
 def _record_route_failure(request: Request, error: ProxyError) -> None:
-    """Record a failure the chat service never saw (FR-020, FR-024).
+    """Record a failure the chat service never saw.
 
     Body rejections are raised before ``ChatRequest`` exists, so nothing on the
     chat path can record them: the access log counts them but the dashboard did
@@ -147,13 +147,13 @@ async def proxy_error_handler(request: Request, exc: Exception) -> Response:
     _record_route_failure(request, exc)
     # Transparency headers are documented for *all* responses, including errors
     # (contracts/openai-compatible.md), so they are emitted here as well as on
-    # the success path (FR-013).
+    # the success path.
     headers = queue_transparency_headers(exc.queue_wait_ms, exc.queue_position)
     if exc.retry_after_s is not None:
         headers["retry-after"] = str(max(0, math.ceil(exc.retry_after_s)))
 
     # Preserve the provider's own status and body for conditions that are not
-    # fully understood, rather than rewriting them (FR-025).
+    # fully understood, rather than rewriting them.
     if exc.provider_body is not None and exc.kind in _PASSTHROUGH_KINDS:
         return Response(
             content=exc.provider_body,

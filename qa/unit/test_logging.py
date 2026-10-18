@@ -2,7 +2,7 @@
 
 The formatter is what an operator actually reads, so its layout is asserted
 literally: fixed-width timestamp, five-character badge, and a ``[section]`` tag
-padded to the width shared by every ``ipp.*`` section (FR-031).
+padded to the width shared by every ``ipp.*`` section.
 """
 
 from __future__ import annotations

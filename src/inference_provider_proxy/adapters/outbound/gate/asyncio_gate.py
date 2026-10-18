@@ -1,13 +1,13 @@
-"""The asyncio FIFO gate (R1).
+"""The asyncio FIFO gate.
 
 A hand-written, cancellation-aware, bounded, capacity-N queue. It provides what
-``asyncio.Semaphore`` cannot: strict arrival order (FR-005), bounded depth and
-wait (FR-006), waiter cancellation before admission (FR-009), position/wait
-reporting (FR-013), configurable capacity (FR-007), and a live snapshot for the
-dashboard (FR-019).
+``asyncio.Semaphore`` cannot: strict arrival order, bounded depth and
+wait, waiter cancellation before admission, position/wait
+reporting, configurable capacity, and a live snapshot for the
+dashboard.
 
 The slot is held by the caller for the whole response — from just before the
-provider call until the last byte is delivered (FR-008) — because the caller
+provider call until the last byte is delivered — because the caller
 exits the ``slot`` context manager only when it is finished with the provider.
 """
 

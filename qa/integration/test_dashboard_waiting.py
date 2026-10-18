@@ -1,4 +1,4 @@
-"""A queued request is visible in the dashboard while it waits (FR-019, SC-008)."""
+"""A queued request is visible in the dashboard while it waits."""
 
 from __future__ import annotations
 

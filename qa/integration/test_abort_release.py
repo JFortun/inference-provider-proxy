@@ -1,4 +1,4 @@
-"""Mid-stream abort and waiter cancellation free the key (US2 / T030)."""
+"""Mid-stream abort and waiter cancellation free the key."""
 
 from __future__ import annotations
 
@@ -193,7 +193,7 @@ def _stream_request(clock, request_id: str) -> ChatRequest:
 
 
 async def test_stalled_upstream_teardown_still_releases_within_the_bound() -> None:
-    """A stalled upstream teardown must not hold the key past the bound (FR-010)."""
+    """A stalled upstream teardown must not hold the key past the bound."""
     settings = Settings(_env_file=None, upstream_api_key="k", disconnect_release=0.05)
     clock = SystemClock()
     gate = AsyncioGate(capacity=1, max_depth=8, clock=clock)
@@ -220,7 +220,7 @@ async def test_stalled_upstream_teardown_still_releases_within_the_bound() -> No
 
 
 async def test_cancelled_stream_consumer_releases_the_slot() -> None:
-    """Cancelling the consumer (a disconnect) frees the key promptly (FR-010)."""
+    """Cancelling the consumer (a disconnect) frees the key promptly."""
     harness = build_harness(_slow_stream_handler(delay_s=0.05, count=8))
     result = await harness.chat.stream(_request(harness, "r1", stream=True))
     assert await anext(result.chunks)

@@ -1,4 +1,4 @@
-"""Driven port for the concurrency gate (FR-004–FR-009, FR-013)."""
+"""Driven port for the concurrency gate."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class QueueTicket:
 
 
 class ConcurrencyGatePort(Protocol):
-    """A cancellation-aware, bounded, FIFO gate (R1)."""
+    """A cancellation-aware, bounded, FIFO gate."""
 
     def slot(
         self,
@@ -43,8 +43,8 @@ class ConcurrencyGatePort(Protocol):
         """Yield a ticket once admitted, holding capacity until the block exits.
 
         Raises a ``queue_full`` or ``queue_timeout`` :class:`ProxyError` when a
-        bound is exceeded (FR-006). A waiter cancelled before admission never
-        consumes capacity (FR-009).
+        bound is exceeded. A waiter cancelled before admission never
+        consumes capacity.
         """
         ...
 

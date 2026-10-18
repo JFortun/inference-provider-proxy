@@ -1,4 +1,4 @@
-"""Pinned contract artefacts shipped with the package (FR-023).
+"""Pinned contract artefacts shipped with the package.
 
 ``dashboard.schema.json`` is the source of truth for the ``GET /dashboard``
 document: ``adapters/inbound/http/serialization.py`` emits exactly the keys it

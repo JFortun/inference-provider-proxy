@@ -1,6 +1,6 @@
-"""Process-wide logging: one colored, section-tagged stderr stream (FR-031).
+"""Process-wide logging: one colored, section-tagged stderr stream.
 
-The proxy holds exactly one credential and it is never logged (FR-018): every
+The proxy holds exactly one credential and it is never logged: every
 record is built from method, path, status, ids and timings only, so the output
 can afford to be readable instead of machine-only:
 

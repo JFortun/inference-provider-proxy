@@ -1,4 +1,4 @@
-"""Cheap liveness check that performs no provider call (FR-003)."""
+"""Cheap liveness check that performs no provider call."""
 
 from __future__ import annotations
 

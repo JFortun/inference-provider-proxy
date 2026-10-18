@@ -1,4 +1,4 @@
-"""The application lifespan owns the background poller (FR-015, FR-032).
+"""The application lifespan owns the background poller.
 
 Driving a real ASGI ``lifespan`` scope through the app also proves the
 request-context middleware passes non-HTTP scopes straight through.
@@ -95,6 +95,6 @@ async def test_startup_and_shutdown_are_logged_without_the_key(monkeypatch, capl
     assert any("key=set" in line for line in lines)
     assert any(line.startswith("limits capacity=1") for line in lines)
     assert "proxy stopped" in lines
-    # The key is reported as presence only, never as a value (FR-018).
+    # The key is reported as presence only, never as a value.
     assert "sekret-provider-key-abc123" not in caplog.text
     assert "Bearer" not in caplog.text

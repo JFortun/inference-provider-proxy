@@ -1,4 +1,4 @@
-"""Malformed request bodies are rejected with a classified 400 (FR-025)."""
+"""Malformed request bodies are rejected with a classified 400."""
 
 from __future__ import annotations
 

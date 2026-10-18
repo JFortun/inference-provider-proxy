@@ -1,4 +1,4 @@
-"""Conditions the proxy does not understand are forwarded verbatim (FR-025)."""
+"""Conditions the proxy does not understand are forwarded verbatim."""
 
 from __future__ import annotations
 
@@ -26,5 +26,5 @@ async def test_unrecognised_provider_error_is_passed_through(asgi_client_factory
     assert response.status_code == 418
     # The provider's own bytes reach the client untouched, not rewritten.
     assert response.content == _PROVIDER_BODY
-    # Transparency headers ride along on the pass-through too (FR-013).
+    # Transparency headers ride along on the pass-through too.
     assert response.headers["X-Queue-Wait-Ms"] == "0"

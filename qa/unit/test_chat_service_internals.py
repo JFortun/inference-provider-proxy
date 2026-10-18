@@ -1,4 +1,4 @@
-"""Internal helpers of the chat service (FR-010)."""
+"""Internal helpers of the chat service."""
 
 from __future__ import annotations
 
@@ -11,5 +11,5 @@ class _ExplodingContextManager:
 
 
 async def test_close_swallows_teardown_errors() -> None:
-    # Closing must never mask the outcome the slot is being released for (FR-010).
+    # Closing must never mask the outcome the slot is being released for.
     await ChatService._close(_ExplodingContextManager())

@@ -1,4 +1,4 @@
-"""Restart recovery (SC-013 / T056).
+"""Restart recovery.
 
 All state is in memory, so an unexpected exit leaves nothing to clean up: a
 fresh process must resume serving immediately, and a request interrupted by the
@@ -44,7 +44,7 @@ async def test_service_resumes_without_operator_action(clean_env) -> None:
         document = (await client.get("/dashboard")).json()
     elapsed = time.monotonic() - started
 
-    assert elapsed < 10.0, "the service must resume serving within 10 seconds (SC-013)"
+    assert elapsed < 10.0, "the service must resume serving within 10 seconds"
     # Session counters restart from zero: an interrupted request is not
     # carried over and cannot be reported as successful afterwards.
     assert document["throughput"]["requests_total"] == 0

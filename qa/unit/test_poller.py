@@ -1,4 +1,4 @@
-"""The background subscription poller refreshes without touching the gate (FR-015)."""
+"""The background subscription poller refreshes without touching the gate."""
 
 from __future__ import annotations
 

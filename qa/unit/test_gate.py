@@ -1,6 +1,6 @@
-"""Unit tests for the asyncio FIFO gate (FR-004-FR-009, SC-003).
+"""Unit tests for the asyncio FIFO gate.
 
-The gate is the load-bearing component: T024 implements it, these tests prove it.
+The gate is the load-bearing component: these tests prove it.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Driven port for the upstream provider (FR-001, FR-002, FR-025)."""
+"""Driven port for the upstream provider."""
 
 from __future__ import annotations
 

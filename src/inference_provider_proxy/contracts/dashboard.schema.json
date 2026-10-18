@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "inference-provider-proxy/contracts/dashboard.schema.json",
   "title": "inference-provider-proxy dashboard document",
-  "description": "Pinned shape of GET /dashboard (FR-019, FR-023). Rendered by adapters/inbound/http/serialization.py, which emits no key this schema does not declare.",
+  "description": "Pinned shape of GET /dashboard. Rendered by adapters/inbound/http/serialization.py, which emits no key this schema does not declare.",
   "type": "object",
   "additionalProperties": false,
   "required": [

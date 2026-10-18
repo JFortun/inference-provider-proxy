@@ -1,7 +1,7 @@
-"""OpenAI-compatible routes (FR-001, FR-002, FR-013, FR-014, FR-017).
+"""OpenAI-compatible routes.
 
 Chat is serialized through the gate; catalogue and usage bypass it entirely. No
-route requires a credential (FR-016).
+route requires a credential.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ async def _await_pre_response[T](request: Request, awaitable: Awaitable[T]) -> T
 
     Nothing else reads the receive channel before the response starts, so the
     watcher may poll ``is_disconnected()``; it stops at the response, where
-    Starlette's own disconnect handling takes over (R2).
+    Starlette's own disconnect handling takes over.
     """
     call = asyncio.ensure_future(awaitable)
     gone = False
@@ -122,18 +122,18 @@ async def chat_completions(request: Request) -> Response:
         client=_client_identity(request),
         model=str(body.get("model", "")),
         stream=bool(body.get("stream", False)),
-        # The body is forwarded verbatim: the proxy never inspects it (FR-001).
+        # The body is forwarded verbatim: the proxy never inspects it.
         body=body,
     )
     # From here the chat service owns this request's dashboard record; anything
-    # raised earlier is recorded by the error handler instead (FR-020).
+    # raised earlier is recorded by the error handler instead.
     request.state.chat_entered = True
 
     if chat_request.stream:
         result = await _await_pre_response(request, services.chat.stream(chat_request))
         # Handed to Starlette unwrapped: the watcher above has stopped, so the
         # single receive channel is free for Starlette's own disconnect handling
-        # from the first chunk onwards (research.md R2).
+        # from the first chunk onwards.
         return StreamingResponse(
             result.chunks,
             media_type=result.media_type,

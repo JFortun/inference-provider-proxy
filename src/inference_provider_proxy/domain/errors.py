@@ -1,4 +1,4 @@
-"""The error taxonomy (FR-020, FR-024): exactly one category per failure."""
+"""The error taxonomy: exactly one category per failure."""
 
 from __future__ import annotations
 
@@ -23,12 +23,12 @@ class ErrorKind(StrEnum):
 
 @dataclass(eq=False)
 class ProxyError(Exception):
-    """A classified failure rendered to clients in the OpenAI dialect (FR-029).
+    """A classified failure rendered to clients in the OpenAI dialect.
 
     ``code`` is always a string — the provider itself returns ``"429"`` as a
     string, so matching and rendering are string-safe. When the condition is not
     fully understood (``unknown``, ``not_reserved``), ``provider_body`` carries
-    the provider's own bytes for pass-through rather than rewriting (FR-025).
+    the provider's own bytes for pass-through rather than rewriting.
     """
 
     kind: ErrorKind
@@ -42,7 +42,7 @@ class ProxyError(Exception):
     provider_body: bytes | None = None
     # Queue transparency for error responses too (contract: transparency
     # headers on *all* responses, including errors). ``None`` means "not
-    # known", which the HTTP layer renders as zero/omitted (FR-013).
+    # known", which the HTTP layer renders as zero/omitted.
     queue_wait_ms: int | None = None
     queue_position: int | None = None
 

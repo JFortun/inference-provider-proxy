@@ -1,4 +1,4 @@
-"""Chat error paths that only surface when the upstream misbehaves (FR-012, FR-024)."""
+"""Chat error paths that only surface when the upstream misbehaves."""
 
 from __future__ import annotations
 

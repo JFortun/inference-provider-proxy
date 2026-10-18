@@ -1,4 +1,4 @@
-"""Metric aggregation helpers behind the dashboard (FR-019, FR-020)."""
+"""Metric aggregation helpers behind the dashboard."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def test_quantile_of_no_samples_is_zero() -> None:
 
 
 def test_client_counters_reconcile_with_throughput() -> None:
-    """An abort is one label in both sections: aborted, never failed as well (F4)."""
+    """An abort is one label in both sections: aborted, never failed as well."""
     clock = FakeClock()
     metrics = MemoryMetrics(base_url="https://provider.test", retention=10, clock=clock)
 

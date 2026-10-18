@@ -1,4 +1,4 @@
-"""Serialize the dashboard document to its pinned JSON shape (FR-023).
+"""Serialize the dashboard document to its pinned JSON shape.
 
 Keys here are exactly the ones the JSON Schema declares — it uses
 ``additionalProperties: false``, so anything extra is a contract violation.

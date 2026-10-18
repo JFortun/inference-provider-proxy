@@ -1,7 +1,7 @@
-"""The serialized chat path (FR-004–FR-013, FR-048 retry budget).
+"""The serialized chat path and its bounded retry budget.
 
 The gate slot is acquired before the provider call and released only after the
-last byte is delivered (FR-008), so a mid-response failure or client disconnect
+last byte is delivered, so a mid-response failure or client disconnect
 cannot leak capacity.
 """
 
@@ -67,7 +67,7 @@ class ChatService:
             ticket = await slot_cm.__aenter__()
             completion = await self._call_with_retries(request.request_id, request.body)
         except asyncio.CancelledError:
-            # The client left before the response started (FR-009, FR-010): record
+            # The client left before the response started: record
             # the abort rather than let the request vanish or be counted as
             # completed; the finally below still frees the slot.
             self._record_client_gone(request, ticket, started, streaming=False)
@@ -75,7 +75,7 @@ class ChatService:
         except ProxyError as exc:
             # Also catches a gate rejection (queue full or wait bound exceeded),
             # which never ran: it is still a classified failure and must be
-            # surfaced in the dashboard taxonomy (FR-020, FR-024).
+            # surfaced in the dashboard taxonomy.
             self._record_failure(request, exc, ticket, started, streaming=False)
             raise
         except Exception as exc:  # noqa: BLE001 - converted to a classified error
@@ -121,7 +121,7 @@ class ChatService:
             raise
         except ProxyError as exc:
             # A gate rejection consumes no capacity and no upstream call, but it
-            # is still a classified failure (FR-020, FR-024).
+            # is still a classified failure.
             self._record_failure(request, exc, None, started, streaming=True)
             raise
         try:
@@ -184,11 +184,11 @@ class ChatService:
             raise error from exc
         finally:
             # Closing the upstream stream aborts the provider request eagerly, so
-            # a disconnect cannot leave the provider busy (FR-010, T031). That
+            # a disconnect cannot leave the provider busy. That
             # teardown is bounded so a stalled upstream cannot hold the single
             # slot past the configured disconnect-to-release bound; the slot is
             # released only afterwards, and only after the outcome is recorded,
-            # so it spans the whole response (FR-008).
+            # so it spans the whole response.
             await self._abort_upstream(stream_cm)
             if outcome == "success":
                 self._emit(
@@ -235,7 +235,7 @@ class ChatService:
         return stream_cm, stream
 
     async def _with_retries(self, request_id: str, call: Callable[[], Awaitable[_T]]) -> _T:
-        """Run ``call`` under the bounded retry budget (FR-012).
+        """Run ``call`` under the bounded retry budget.
 
         Transient provider failures are retried, honouring ``retry-after`` and
         only while capacity permits (the slot is already held here), until the
@@ -291,11 +291,10 @@ class ChatService:
     ) -> None:
         """Record one request's outcome and, when it failed, its error episode.
 
-        A gate rejection arrives before a ticket exists (FR-006) and already
+        A gate rejection arrives before a ticket exists and already
         carries its own queue wait; anything else takes the ticket's values. The
         resolved values are written back onto the error too, because that object
-        is raised to the client and its transparency headers are read there
-        (FR-013).
+        is raised to the client and its transparency headers are read there.
         """
         if ticket is not None:
             queue_wait_ms: int | None = ticket.wait_ms
@@ -338,8 +337,8 @@ class ChatService:
             return
 
         # in_flight <= capacity on a provider throttle shows the gate never
-        # over-admitted, so `provider_busy` is not read as a gate fault (FR-008:
-        # the slot is still held here; a gate rejection is recorded pre-admission).
+        # over-admitted, so `provider_busy` is not read as a gate fault (the
+        # slot is still held here; a gate rejection is recorded pre-admission).
         gate = self._gate.snapshot()
         self._metrics.record_error(
             ErrorEpisode(
@@ -389,7 +388,7 @@ class ChatService:
         *,
         streaming: bool,
     ) -> None:
-        """Record a disconnect seen before the response started (FR-009, FR-010)."""
+        """Record a disconnect seen before the response started."""
         logger.warning(
             "client disconnected while %s request_id=%s",
             "queued" if ticket is None else "in flight",
@@ -404,7 +403,7 @@ class ChatService:
 
         The bound is a maximum, not a target: a teardown that stalls, times out,
         or is cancelled by the disconnect itself must never skip the capacity
-        release that follows (FR-010).
+        release that follows.
         """
         try:
             await asyncio.wait_for(

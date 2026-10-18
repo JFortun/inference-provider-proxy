@@ -27,7 +27,7 @@ class ChatStreamResult:
     """An opened streaming chat completion plus transparency metadata.
 
     ``chunks`` must be iterated to completion (or closed) so the gate slot is
-    released (FR-008, FR-010).
+    released.
     """
 
     request_id: str
@@ -38,7 +38,7 @@ class ChatStreamResult:
 
 
 class ChatCompletionUseCase(Protocol):
-    """The serialized chat path (FR-004, FR-008)."""
+    """The serialized chat path."""
 
     async def complete(self, request: ChatRequest) -> ChatResult: ...
 
@@ -46,7 +46,7 @@ class ChatCompletionUseCase(Protocol):
 
 
 class CatalogUseCase(Protocol):
-    """Ungated catalogue and usage retrieval (FR-002, FR-014)."""
+    """Ungated catalogue and usage retrieval."""
 
     async def models(self) -> dict[str, Any]: ...
 
@@ -54,6 +54,6 @@ class CatalogUseCase(Protocol):
 
 
 class DashboardUseCase(Protocol):
-    """Assembles the single session document (FR-019)."""
+    """Assembles the single session document."""
 
     def document(self) -> DashboardDocument: ...

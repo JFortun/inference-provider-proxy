@@ -1,8 +1,8 @@
-"""In-memory metrics aggregation (R6).
+"""In-memory metrics aggregation.
 
 Ring buffers hold the recent samples used for latency quantiles; cumulative
 counters track the whole process session; every error category is present and
-zero-filled so the dashboard document is always complete (FR-020, FR-023).
+zero-filled so the dashboard document is always complete.
 Also holds subscription and upstream state so the dashboard has one source.
 """
 

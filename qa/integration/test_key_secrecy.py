@@ -1,4 +1,4 @@
-"""The paid key never reaches a client response or a log record (US5 / T042)."""
+"""The paid key never reaches a client response or a log record."""
 
 from __future__ import annotations
 
@@ -43,17 +43,17 @@ async def test_key_is_substituted_outbound_but_never_returned(asgi_client_factor
 
     assert response.status_code == 200
 
-    # Substituted server-side on the outbound call (FR-017).
+    # Substituted server-side on the outbound call.
     assert seen["authorization"] == f"Bearer {KEY}"
     assert seen["user_agent"] == harness.settings.user_agent
 
-    # Absent from every client-facing surface (FR-017, SC-006).
+    # Absent from every client-facing surface.
     assert KEY not in response.text
     assert KEY not in dashboard.text
     for name, value in response.headers.items():
         assert KEY not in f"{name}: {value}"
 
-    # Absent from logs (FR-018, SC-006).
+    # Absent from logs.
     assert KEY not in caplog.text
     assert "Bearer" not in caplog.text
 

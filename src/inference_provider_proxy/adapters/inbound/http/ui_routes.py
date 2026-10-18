@@ -1,4 +1,4 @@
-"""The HTML dashboard page: the ``GET /dashboard`` document, rendered as a page (FR-019).
+"""The HTML dashboard page: the ``GET /dashboard`` document, rendered as a page.
 
 Reads metrics only, so like ``/dashboard`` it is never blocked by the gate. The
 browser gets plain HTML and a stylesheet — no client-side script.

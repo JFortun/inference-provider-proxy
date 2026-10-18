@@ -1,6 +1,6 @@
-"""Metrics value objects (FR-019, FR-031).
+"""Metrics value objects.
 
-Field names are canonical and pinned by the dashboard schema test (FR-023);
+Field names are canonical and pinned by the dashboard schema test;
 see ``inference_provider_proxy/contracts/dashboard.schema.json``.
 """
 
@@ -113,7 +113,7 @@ class LatencySnapshot:
 
 @dataclass(frozen=True, slots=True)
 class ErrorEpisode:
-    """One classified failure (FR-024, FR-025).
+    """One classified failure.
 
     ``gate_in_flight``/``gate_capacity`` are the admission state at record time:
     ``in_flight <= capacity`` means the gate never over-admitted, which is what
@@ -183,7 +183,7 @@ class SessionInfo:
 
 @dataclass(frozen=True, slots=True)
 class DashboardDocument:
-    """Top level of ``GET /dashboard`` (FR-019)."""
+    """Top level of ``GET /dashboard``."""
 
     generated_at: datetime
     session: SessionInfo

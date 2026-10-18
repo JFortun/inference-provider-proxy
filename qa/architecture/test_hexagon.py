@@ -1,4 +1,4 @@
-"""Hexagon boundaries are enforced mechanically, not by review (R9 / T050).
+"""Hexagon boundaries are enforced mechanically, not by review.
 
 Four rules, each verified to *fail* when deliberately violated so a rename or a
 boundary break cannot pass silently:

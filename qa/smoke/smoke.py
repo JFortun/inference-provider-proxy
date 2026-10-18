@@ -1,4 +1,4 @@
-"""Live acceptance smoke run (T051).
+"""Live acceptance smoke run.
 
 Fires N concurrent chat requests at a *running* proxy and asserts the gate did
 its job. This is a raw-``httpx`` script, deliberately independent of the pytest
@@ -104,11 +104,11 @@ async def main() -> None:
         by_kind = document["errors"]["by_kind"]
         if by_kind["provider_busy"] != 0:
             _fail(
-                f"provider_busy is {by_kind['provider_busy']}, expected 0 (SC-002): "
+                f"provider_busy is {by_kind['provider_busy']}, expected 0: "
                 "provider 429s of in-limit requests, usually a shared key"
             )
         if document["gate"]["in_flight"] > document["gate"]["capacity"]:
-            _fail("gate.in_flight exceeded gate.capacity (SC-003)")
+            _fail("gate.in_flight exceeded gate.capacity")
         # The only true gate fault: an episode recorded over capacity.
         over_capacity = [
             episode

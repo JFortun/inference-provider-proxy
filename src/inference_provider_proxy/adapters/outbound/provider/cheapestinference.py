@@ -1,10 +1,10 @@
-"""CheapestInference provider adapter (R3, R4, FR-025, FR-027, FR-028, FR-043).
+"""CheapestInference provider adapter.
 
 Owns the single ``httpx.AsyncClient``, substitutes the real provider credential
-server-side (FR-017), identifies itself with an explicit non-default User-Agent
-(FR-028), passes the provider's status and body through for conditions it does
-not fully understand (FR-025), and classifies every failure into exactly one
-category (FR-024, T047). No request-size ceiling is imposed (FR-001).
+server-side, identifies itself with an explicit non-default User-Agent, passes
+the provider's status and body through for conditions it does not fully
+understand, and classifies every failure into exactly one category. No
+request-size ceiling is imposed.
 """
 
 from __future__ import annotations
@@ -50,8 +50,7 @@ class _OpenStream:
     """Wraps an upstream SSE response, scanning chunks for ids and usage.
 
     Each read is bounded by the configured stream idle timeout, so a stalled
-    upstream cannot hold the single slot open indefinitely (spec Edge Cases
-    "Very long streaming response", FR-030).
+    upstream cannot hold the single slot open indefinitely.
     """
 
     def __init__(self, response: httpx.Response, *, idle_timeout_s: float) -> None:
@@ -222,7 +221,7 @@ class CheapestInferenceProvider:
     # -- internals -----------------------------------------------------------
 
     async def _get_bytes(self, path: str) -> bytes:
-        """GET one provider path, classifying any failure (FR-024, FR-025)."""
+        """GET one provider path, classifying any failure."""
         started = time.monotonic()
         async with self._client.stream("GET", path, headers=self._outbound_headers()) as response:
             logger.debug(
@@ -237,7 +236,7 @@ class CheapestInferenceProvider:
             return await response.aread()
 
     def _outbound_headers(self, *, stream: bool = False) -> dict[str, str]:
-        """Build outbound headers, substituting the real key server-side (FR-017).
+        """Build outbound headers, substituting the real key server-side.
 
         The client's own ``Authorization`` header is never read or forwarded.
         """
@@ -302,7 +301,7 @@ class CheapestInferenceProvider:
 
     def _unreachable(self, exc: Exception) -> ProxyError:
         # The exception class only: its message may quote parts of a request,
-        # and nothing about the credential may reach a record (FR-018).
+        # and nothing about the credential may reach a record.
         logger.warning("provider unreachable: %s", type(exc).__name__)
         return ProxyError(
             kind=ErrorKind.UPSTREAM_UNREACHABLE,
@@ -314,7 +313,7 @@ class CheapestInferenceProvider:
         )
 
     def _classify(self, status: int, headers: Mapping[str, str], raw: bytes) -> ProxyError:
-        """Map one provider failure onto exactly one category (FR-024, T047)."""
+        """Map one provider failure onto exactly one category."""
         text = raw.decode("utf-8", "replace")
         payload: Any = None
         try:
@@ -329,7 +328,7 @@ class CheapestInferenceProvider:
             error = payload.get("error")
             if isinstance(error, dict):
                 error_type = str(error.get("type", ""))
-                code = str(error.get("code", ""))  # string-safe (R4)
+                code = str(error.get("code", ""))  # string-safe
 
         # Upstream concurrency collision: 429 + throttling.
         if status == 429:
@@ -397,7 +396,7 @@ class CheapestInferenceProvider:
                 message="The provider returned a server error.",
                 retryable=True,
                 # A retryable condition must carry a retry hint even when the
-                # provider did not send one (FR-029).
+                # provider did not send one.
                 retry_after_s=retry_after if retry_after is not None else 1.0,
                 provider_status=status,
                 provider_correlation_id=correlation,

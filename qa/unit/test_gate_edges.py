@@ -1,4 +1,4 @@
-"""Gate edge cases: the constructor guard and the cancel-vs-admit race (FR-004, FR-010)."""
+"""Gate edge cases: the constructor guard and the cancel-vs-admit race."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ async def test_cancelling_a_waiter_admitted_in_the_same_instant_releases_the_slo
     # Releasing the holder admits the queued waiter (its ticket is set) and marks
     # its event ready, but the waiter has not resumed yet. Cancelling it in the
     # same event-loop turn must hand the just-granted slot straight back rather
-    # than leaking it (FR-010). ``release.set()`` schedules the holder first, so
+    # than leaking it. ``release.set()`` schedules the holder first, so
     # the callback queued after it observes the admitted-waiter state.
     release.set()
     asyncio.get_running_loop().call_soon(waiter_task.cancel)

@@ -1,4 +1,4 @@
-"""The dashboard route: one JSON document, never blocked by the gate (FR-019, FR-021)."""
+"""The dashboard route: one JSON document, never blocked by the gate."""
 
 from __future__ import annotations
 

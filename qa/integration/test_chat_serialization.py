@@ -1,4 +1,4 @@
-"""Integration tests: overlapping chat requests serialize instead of colliding (US1 / SC-001)."""
+"""Integration tests: overlapping chat requests serialize instead of colliding."""
 
 from __future__ import annotations
 
@@ -185,7 +185,7 @@ async def test_queue_full_rejection_is_surfaced_in_the_taxonomy(asgi_client_fact
 
 
 async def test_transient_provider_failure_is_retried_and_succeeds(asgi_client_factory) -> None:
-    """A retryable failure is retried within the budget rather than failing (FR-012)."""
+    """A retryable failure is retried within the budget rather than failing."""
     harness = build_harness(_chat_handler(0.0, fail_once=True), max_retries=2)
     client = asgi_client_factory(harness.app)
 
@@ -204,7 +204,7 @@ async def test_transient_provider_failure_is_retried_and_succeeds(asgi_client_fa
 async def test_transient_provider_failure_is_retried_on_the_streaming_path(
     asgi_client_factory,
 ) -> None:
-    """The retry budget applies to streams too, not only to buffered calls (FR-012)."""
+    """The retry budget applies to streams too, not only to buffered calls."""
     harness = build_harness(_chat_handler(0.0, fail_once=True), max_retries=2)
     client = asgi_client_factory(harness.app)
 
@@ -221,7 +221,7 @@ async def test_transient_provider_failure_is_retried_on_the_streaming_path(
 
 
 async def test_retry_budget_exhaustion_fails_fast(asgi_client_factory) -> None:
-    """Once the budget is spent the classified error is surfaced (FR-012)."""
+    """Once the budget is spent the classified error is surfaced."""
 
     def always_429(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -250,14 +250,14 @@ async def test_retry_budget_exhaustion_fails_fast(asgi_client_factory) -> None:
     assert harness.metrics.upstream().retries_total == 2  # exactly the budget
     assert harness.metrics.errors().by_kind[ErrorKind.PROVIDER_BUSY.value] == 1
     # Recorded while this request itself held the only slot: within capacity, so
-    # the episode documents that the gate never over-admitted (F1 / SC-002).
+    # the episode documents that the gate never over-admitted.
     episode = harness.metrics.errors().recent[0]
     assert episode.kind is ErrorKind.PROVIDER_BUSY
     assert (episode.gate_in_flight, episode.gate_capacity) == (1, 1)
 
 
 async def test_error_responses_carry_transparency_headers(asgi_client_factory) -> None:
-    """Transparency headers are documented for all responses, errors included (FR-013)."""
+    """Transparency headers are documented for all responses, errors included."""
     harness = build_harness(
         _chat_handler(0.2), provider_concurrency=1, max_queue_depth=0, max_retries=0
     )
@@ -298,7 +298,7 @@ async def test_upstream_failure_error_carries_queue_transparency(asgi_client_fac
 
 
 async def test_queue_position_is_recoverable_from_the_dashboard(asgi_client_factory) -> None:
-    """SC-008: a served request's wait position is recoverable from the dashboard."""
+    """A served request's wait position is recoverable from the dashboard."""
     harness = build_harness(_chat_handler(0.05), provider_concurrency=1, max_queue_depth=10)
     client = asgi_client_factory(harness.app)
 

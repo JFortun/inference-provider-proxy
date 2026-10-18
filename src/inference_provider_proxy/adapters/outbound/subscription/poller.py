@@ -1,7 +1,7 @@
-"""Background upstream refresher (FR-015, T041).
+"""Background upstream refresher.
 
 Refreshes the entitlement view and the model catalogue on a timer without ever
-touching the gate, so it can never consume chat capacity (FR-014). When a
+touching the gate, so it can never consume chat capacity. When a
 refresh fails the last known value is kept and marked stale rather than being
 cleared.
 
@@ -59,7 +59,7 @@ class SubscriptionPoller:
         logger.info("subscription poller stopped")
 
     async def refresh_once(self) -> None:
-        """One refresh attempt; failures mark the view stale (FR-015)."""
+        """One refresh attempt; failures mark the view stale."""
         try:
             info = await self._provider.fetch_usage()
             models = await self._provider.list_models()
@@ -78,7 +78,7 @@ class SubscriptionPoller:
             self._consecutive_failures = 0
         logger.debug("subscription refresh ok pool=%s stale=%s", info.pool, info.stale)
         self._subscription.update(info)
-        # The dashboard's catalogue must not depend on a client asking (FR-020).
+        # The dashboard's catalogue must not depend on a client asking.
         self._subscription.set_models(models, checked_at=self._clock.now())
 
     async def _run(self) -> None:

@@ -1,4 +1,4 @@
-"""A client that leaves before the response starts is observed, not served (FR-009, FR-010).
+"""A client that leaves before the response starts is observed, not served.
 
 These drive the ASGI app by hand so ``receive()`` can deliver a real
 ``http.disconnect``, instead of simulating it with ``task.cancel()``.
@@ -113,7 +113,7 @@ async def test_queued_client_disconnect_frees_the_queue_and_is_recorded(
             await asyncio.wait_for(task, 5)
 
         snapshot = harness.gate.snapshot()
-        assert snapshot.cancelled_while_waiting_total == 1  # FR-009 over real ASGI
+        assert snapshot.cancelled_while_waiting_total == 1  # observed over real ASGI
         assert snapshot.queued == 0  # the place is given back at once
         assert snapshot.in_flight == 1  # only the holder remains
         assert calls["n"] == 0  # a dead client never reaches the provider
@@ -125,7 +125,7 @@ async def test_queued_client_disconnect_frees_the_queue_and_is_recorded(
         throughput = metrics.throughput()
         assert throughput.requests_aborted == 1
         assert throughput.requests_completed == 0
-        rows = metrics.clients()  # F4: the two sections label the abort alike
+        rows = metrics.clients()  # the two sections label the abort alike
         assert sum(row.failed for row in rows) == throughput.requests_failed
         assert sum(row.aborted for row in rows) == throughput.requests_aborted
         record = metrics.recent_requests()[0]

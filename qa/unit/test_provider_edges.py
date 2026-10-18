@@ -1,4 +1,4 @@
-"""Provider branches beyond the classification fixtures (FR-024, FR-025, FR-030)."""
+"""Provider branches beyond the classification fixtures."""
 
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
-"""Ungated catalogue and usage retrieval with a short TTL cache (FR-002, FR-014).
+"""Ungated catalogue and usage retrieval with a short TTL cache.
 
 Neither path ever touches the gate: metadata must not wait behind, or consume,
-chat capacity (FR-014, SC-012).
+chat capacity.
 """
 
 from __future__ import annotations

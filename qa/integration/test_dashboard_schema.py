@@ -1,4 +1,4 @@
-"""The dashboard document matches its pinned schema (US3 / T034)."""
+"""The dashboard document matches its pinned schema."""
 
 from __future__ import annotations
 
@@ -105,13 +105,13 @@ async def test_dashboard_reflects_served_traffic(asgi_client_factory) -> None:
     assert document["throughput"]["requests_completed"] == 1
     assert len(document["recent_requests"]) == 1
     assert document["recent_requests"][0]["status"] == 200
-    # Admitted immediately, so there is no wait position to report (SC-008, FR-013).
+    # Admitted immediately, so there is no wait position to report.
     assert document["recent_requests"][0]["queue_position"] is None
 
 
 async def test_error_episodes_carry_the_gate_admission_state(asgi_client_factory) -> None:
     """An episode records the gate's in-flight/capacity, so `provider_busy` reads
-    as "within capacity, not a gate fault" (F1)."""
+    as "within capacity, not a gate fault"."""
 
     def throttled(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/chat/completions"):
@@ -145,7 +145,7 @@ async def test_error_episodes_carry_the_gate_admission_state(asgi_client_factory
 async def test_route_rejections_before_the_chat_service_reach_the_dashboard(
     asgi_client_factory,
 ) -> None:
-    """Body rejections are logged and answered, so they must also be counted (F3)."""
+    """Body rejections are logged and answered, so they must also be counted."""
     harness = build_harness(_handler)
     client = asgi_client_factory(harness.app)
 

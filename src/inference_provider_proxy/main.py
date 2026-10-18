@@ -1,8 +1,8 @@
-"""Composition root: build the adapters and wire the application (T021).
+"""Composition root: build the adapters and wire the application.
 
 This is the only place that knows about both ports and concrete adapters. All
 state is in memory, so an unexpected exit leaves nothing to clean up and the
-service resumes serving on restart (FR-032, SC-013).
+service resumes serving on restart.
 """
 
 from __future__ import annotations
@@ -103,8 +103,8 @@ def build_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         # Only the host part of the provider URL is printed: credentials must
-        # never reach a record, even when someone puts them in the base URL
-        # (FR-018), and the key itself is reported as presence only.
+        # never reach a record, even when someone puts them in the base URL,
+        # and the key itself is reported as presence only.
         provider_host = urlsplit(settings.upstream_base_url).netloc.rsplit("@", 1)[-1]
         logger.info(
             "starting proxy on %s:%s provider=%s key=%s log_level=%s",
