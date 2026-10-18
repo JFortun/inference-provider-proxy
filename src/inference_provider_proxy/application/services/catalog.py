@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from inference_provider_proxy.domain.models import SubscriptionInfo
+from inference_provider_proxy.domain.models import ModelInfo, SubscriptionInfo
+from inference_provider_proxy.domain.timestamps import iso_z
 
 if TYPE_CHECKING:
     from inference_provider_proxy.application.ports.clock import ClockPort
@@ -43,10 +44,7 @@ class CatalogService:
         models = await self._provider.list_models()
         payload = {
             "object": "list",
-            "data": [
-                {"id": model.id, "object": "model", "context_length": model.context_length}
-                for model in models
-            ],
+            "data": [self._model_payload(model) for model in models],
         }
         self._metrics.set_models(models, checked_at=self._clock.now())
         self._put("models", payload)
@@ -77,12 +75,23 @@ class CatalogService:
         self._cache[key] = (self._clock.monotonic(), payload)
 
     @staticmethod
+    def _model_payload(model: ModelInfo) -> dict[str, Any]:
+        # Forward the provider's object verbatim; only the parsed keys are pinned.
+        payload = dict(model.source)
+        payload["id"] = model.id
+        payload.setdefault("object", "model")
+        payload["context_length"] = model.context_length
+        return payload
+
+    @staticmethod
     def _subscription_payload(info: SubscriptionInfo) -> dict[str, Any]:
         return {
+            "success": info.success,
             "object": "subscription",
             "pool": info.pool,
             "status": info.status,
-            "expires_at": info.expires_at.isoformat() if info.expires_at else None,
+            "expires_at": iso_z(info.expires_at),
             "seconds_until_expiry": info.seconds_until_expiry,
             "key_name": info.key_name,
+            "key": dict(info.key),
         }

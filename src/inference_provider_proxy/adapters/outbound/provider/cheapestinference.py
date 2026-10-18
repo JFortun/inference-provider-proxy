@@ -204,7 +204,13 @@ class CheapestInferenceProvider:
         models: list[ModelInfo] = []
         for item in data.get("data", []) if isinstance(data, dict) else []:
             if isinstance(item, dict) and isinstance(item.get("id"), str):
-                models.append(ModelInfo(id=item["id"], context_length=item.get("context_length")))
+                models.append(
+                    ModelInfo(
+                        id=item["id"],
+                        context_length=item.get("context_length"),
+                        source=item,
+                    )
+                )
         return models
 
     async def fetch_usage(self) -> SubscriptionInfo:
@@ -256,6 +262,7 @@ class CheapestInferenceProvider:
             return SubscriptionInfo(last_checked_at=now, stale=True)
         # The provider wraps the payload: {"success": true, "data": {...}},
         # with the plan under "plan" and the key label under "key".
+        raw_success = data.get("success")
         if isinstance(data.get("data"), dict):
             data = data["data"]
         plan = data.get("plan") if isinstance(data.get("plan"), dict) else {}
@@ -271,6 +278,8 @@ class CheapestInferenceProvider:
             expires_at=expires_at,
             seconds_until_expiry=seconds,
             key_name=key.get("name") or data.get("key_name") or data.get("name"),
+            success=raw_success if isinstance(raw_success, bool) else None,
+            key=key,
             last_checked_at=now,
             stale=False,
         )

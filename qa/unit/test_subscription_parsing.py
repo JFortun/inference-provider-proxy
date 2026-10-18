@@ -45,6 +45,12 @@ async def test_usage_nested_payload_is_understood() -> None:
     assert info.expires_at.year == 2026
     assert info.seconds_until_expiry is not None
     assert info.stale is False
+    assert info.success is True  # the envelope flag survives parsing (F5)
+    assert info.key == {
+        "name": "Core key",
+        "type": "subscription",
+        "created_at": "2026-09-09T10:10:52.449Z",
+    }
 
 
 async def test_models_are_parsed_with_context_length() -> None:
@@ -53,7 +59,14 @@ async def test_models_are_parsed_with_context_length() -> None:
             200,
             json={
                 "data": [
-                    {"id": "mimo-v2.5", "object": "model", "context_length": 1048576},
+                    {
+                        "id": "mimo-v2.5",
+                        "object": "model",
+                        "context_length": 1048576,
+                        "created": 1735689600,
+                        "owned_by": "xiaomi",
+                        "type": "chat",
+                    },
                     {"id": "deepseek-v4.1-flash", "object": "model", "context_length": 1000000},
                 ]
             },
@@ -69,6 +82,14 @@ async def test_models_are_parsed_with_context_length() -> None:
         ("mimo-v2.5", 1048576),
         ("deepseek-v4.1-flash", 1000000),
     ]
+    assert set(models[0].source) == {
+        "id",
+        "object",
+        "context_length",
+        "created",
+        "owned_by",
+        "type",
+    }  # parsing keeps the source object verbatim (F5)
 
 
 async def test_non_json_usage_body_marks_stale() -> None:

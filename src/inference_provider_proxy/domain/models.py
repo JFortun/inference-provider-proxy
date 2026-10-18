@@ -39,6 +39,8 @@ class ModelInfo:
 
     id: str
     context_length: int | None = None
+    # The provider's object, kept verbatim so the route can forward every field.
+    source: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,5 +52,8 @@ class SubscriptionInfo:
     expires_at: datetime | None = None
     seconds_until_expiry: int | None = None
     key_name: str | None = None
+    # Verbatim from the usage payload: the envelope flag and the provider's key object.
+    success: bool | None = None
+    key: dict[str, Any] = field(default_factory=dict)
     last_checked_at: datetime | None = None
     stale: bool = True

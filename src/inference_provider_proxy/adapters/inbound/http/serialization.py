@@ -6,7 +6,6 @@ Keys here are exactly the ones the JSON Schema declares — it uses
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from inference_provider_proxy.domain.metrics import (
@@ -20,12 +19,7 @@ from inference_provider_proxy.domain.metrics import (
     UpstreamSnapshot,
     WaitingRequest,
 )
-
-
-def _iso(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat().replace("+00:00", "Z")
+from inference_provider_proxy.domain.timestamps import iso_z as _iso
 
 
 def _latency(distribution: LatencyDistribution) -> dict[str, int]:

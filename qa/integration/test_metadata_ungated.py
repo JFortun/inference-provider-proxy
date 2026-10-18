@@ -114,3 +114,75 @@ async def test_cache_entry_expires_after_the_ttl(asgi_client_factory) -> None:
     await client.get("/v1/models")
 
     assert calls["models"] == 2, "an expired entry must be refetched"
+
+
+async def test_metadata_routes_forward_the_source_payloads(asgi_client_factory) -> None:
+    """Nothing is dropped or re-dialected between the provider and the client (F5)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/v1/models"):
+            return httpx.Response(
+                200,
+                json={
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": "deepseek-v4.1-flash",
+                            "object": "model",
+                            "created": 1759872000,
+                            "owned_by": "deepseek",
+                            "type": "chat",
+                            "context_length": 128000,
+                        }
+                    ],
+                },
+            )
+        if path.endswith("/v1/usage"):
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "plan": {
+                            "slug": "core",
+                            "status": "active",
+                            "expires_at": "2030-01-01T00:00:00.000Z",
+                        },
+                        "key": {
+                            "name": "Core key",
+                            "type": "subscription",
+                            "created_at": "2026-09-09T10:10:52.449Z",
+                        },
+                    },
+                },
+            )
+        return httpx.Response(404, json={"error": "not found"})
+
+    harness = build_harness(handler)
+    client = asgi_client_factory(harness.app)
+
+    # The provider's model object arrives verbatim, only pinned keys added.
+    assert (await client.get("/v1/models")).json()["data"][0] == {
+        "id": "deepseek-v4.1-flash",
+        "object": "model",
+        "created": 1759872000,
+        "owned_by": "deepseek",
+        "type": "chat",
+        "context_length": 128000,
+    }
+
+    usage = (await client.get("/v1/usage")).json()
+    assert usage["success"] is True
+    assert usage["key"] == {
+        "name": "Core key",
+        "type": "subscription",
+        "created_at": "2026-09-09T10:10:52.449Z",
+    }
+    assert usage["key_name"] == "Core key"  # derived, kept alongside key.*
+    assert usage["pool"] == "core"  # slug renamed by the contract, not dropped
+    assert usage["object"] == "subscription"
+    assert isinstance(usage["seconds_until_expiry"], int)  # derived
+    # One timestamp dialect: same Z suffix the dashboard renders.
+    assert usage["expires_at"] == "2030-01-01T00:00:00Z"
+    assert "+00:00" not in usage["expires_at"]
