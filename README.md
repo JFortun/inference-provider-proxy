@@ -43,6 +43,119 @@ Every setting uses the `IPP_` prefix. The ones you are most likely to touch:
 
 `.env.example` lists the full set (upstream/stream timeouts, cache TTLs, access logging, metrics retention).
 
+## Windows
+
+The proxy runs on Windows with `uv` and Python 3.15 and **without** MSVC Build Tools,
+as long as two dependency adjustments are made (steps 2–3). This section is
+self-contained: follow it top to bottom.
+
+### Prerequisites
+
+- [`uv`](https://docs.astral.sh/uv/):
+
+  ```powershell
+  powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+  ```
+
+  The installer puts `uv.exe` in `%USERPROFILE%\.local\bin` — add that directory to
+  your user `PATH` if `uv` is not recognized.
+- Python 3.15: `uv python install 3.15`
+
+### One-time setup
+
+**1. Clone and enter the repository.** The working directory matters later: `.env` is
+loaded by relative path on every start.
+
+```powershell
+git clone https://github.com/JFortun/inference-provider-proxy.git
+cd inference-provider-proxy
+```
+
+**2. Adjust `pyproject.toml` for Windows.** The `[standard]` extra of `uvicorn` pulls
+`PyYAML`/`zstandard`, which ship no wheels for CPython 3.15 on Windows and try to build
+from source — that fails without MSVC Build Tools. Drop the extra:
+
+```toml
+dependencies = [
+    "fastapi==0.143.3",
+    "httpx==0.28.1",
+    "pydantic-settings==2.16.0",
+    "uvicorn==0.54.0",   # Windows: no [standard] extra, see note above
+]
+```
+
+**3. Re-lock and sync without the dev group.** The `dev` group (coverage, linters,
+langchain/langgraph, …) does not build on Windows either, for the same reason, so keep
+it out of the environment:
+
+```powershell
+uv lock
+uv sync --no-dev
+```
+
+**4. Configure.** Copy the example and fill in your provider values (`.env` is
+git-ignored; never commit it):
+
+```powershell
+Copy-Item .env.example .env
+```
+
+| Variable                 | Value                 | Notes                                                  |
+| ------------------------ | --------------------- | ------------------------------------------------------ |
+| `IPP_UPSTREAM_BASE_URL`  | `https://api.example.com` | **Without** `/v1` — the adapter appends it.        |
+| `IPP_UPSTREAM_API_KEY`   | your provider key     | Never sent to clients, never logged.                   |
+| `IPP_BIND_HOST`          | `127.0.0.1`           | Loopback only; `0.0.0.0` to serve a LAN.               |
+| `IPP_BIND_PORT`          | `13306`               |                                                        |
+| `IPP_PROVIDER_CONCURRENCY` | `1`                 | Should match the provider's concurrency limit.         |
+
+### Run on Windows
+
+Always start from the repository directory (relative `.env`) and always with `--no-dev`:
+
+```powershell
+uv run --no-dev ipp
+```
+
+Stop it with `Ctrl+C`; nothing else is left behind.
+
+### Verify
+
+From a second PowerShell window:
+
+| Check           | Command                                                       | Expected                                  |
+| --------------- | ------------------------------------------------------------- | ----------------------------------------- |
+| Liveness        | `Invoke-RestMethod http://127.0.0.1:13306/healthz`            | `{"status":"ok"}`                         |
+| Upstream + key  | `Invoke-RestMethod http://127.0.0.1:13306/v1/models`          | The provider's model list.                |
+| Session, queue  | `Invoke-RestMethod http://127.0.0.1:13306/dashboard`          | JSON session document.                    |
+| Concurrency     | smoke test (below)                                            | `SMOKE PASS`                              |
+
+The smoke test fires five overlapping requests plus a streaming round-trip:
+
+```powershell
+$env:IPP_SMOKE_BASE_URL = "http://127.0.0.1:13306"
+uv run --no-dev python qa/smoke/smoke.py
+```
+
+It asserts every request returns `200`, queue waits grow under contention, and
+`provider_busy` stays `0`. Without the dev group `jsonschema` is missing, so the
+dashboard schema validation is reported as `skip` — that one is expected.
+
+### Point a client at it
+
+Any OpenAI-compatible client needs base URL `http://127.0.0.1:13306/v1` (keep the `/v1`
+suffix) and any non-empty placeholder key — the proxy substitutes the real key
+server-side. Only `POST /v1/chat/completions` goes through the queue.
+
+### Common issues
+
+| Symptom                                       | Cause / fix                                                                 |
+| --------------------------------------------- | --------------------------------------------------------------------------- |
+| `uv sync` fails compiling `PyYAML`/`zstandard` | The `[standard]` extra is still present — drop it (step 2) and `uv lock` again. |
+| Dev dependencies fail to build                | Use `uv sync --no-dev` / `uv run --no-dev` everywhere.                       |
+| Settings ignored, default upstream URL        | The process started outside the repository directory (relative `.env`).      |
+| Client gets `connection refused`              | The proxy is not running — start it (see Run on Windows).                    |
+| `uv` is not recognized                        | `%USERPROFILE%\.local\bin` is not on the user `PATH`.                        |
+
 ## Run
 
 ```sh
