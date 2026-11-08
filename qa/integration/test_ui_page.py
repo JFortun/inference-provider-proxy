@@ -202,6 +202,10 @@ async def test_populated_page_renders_every_section_and_escapes(
     assert ">3/1<" in body
     assert "in-flight / capacity" in body
     assert "curl/8.5" in body
+    # The clients bar sits in its own labelled column: as a bare <td class="bar">
+    # the cell lost its table sizing and collapsed to its padding (issue #5).
+    assert '<th class="share">Share</th>' in body
+    assert '<td class="share"><span class="bar"><i style="width: 100%">' in body
     assert "128k" in body
     # Under the render cap: no truncation footnote.
     assert '<p class="note"></p>' in body
