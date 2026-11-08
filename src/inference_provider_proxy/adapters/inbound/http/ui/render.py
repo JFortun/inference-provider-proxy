@@ -171,7 +171,7 @@ def _client_row(item: dict[str, Any], worst: int) -> str:
         f"<tr><td>{_e(item['client'])}</td>"
         f'<td class="small" title="{_e(item["user_agent"])}">{_e(item["user_agent"])}</td>'
         f'<td class="num">{item["requests"]}</td>'
-        f'<td class="bar"><i style="width: {width}%"></i></td>'
+        f'<td class="share"><span class="bar"><i style="width: {width}%"></i></span></td>'
         f'<td class="num">{item["failed"]}</td><td class="num">{item["aborted"]}</td>'
         f'<td class="num">{_fmt_ms(item["avg_queue_wait_ms"])}</td>'
         f'<td class="num">{_fmt_ms(item["avg_duration_ms"])}</td>'

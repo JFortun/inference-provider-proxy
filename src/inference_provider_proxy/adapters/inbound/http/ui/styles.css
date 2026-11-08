@@ -215,6 +215,17 @@ td {
     white-space: nowrap;
     font-size: 0.7rem;
 }
+/* clients "Share" column: the track needs a cell that keeps table sizing.
+   Applied to the <td> itself, .bar (display: block, height: 6px) took the cell
+   out of the table sizing rules and it collapsed to its own padding. */
+th.share,
+td.share {
+    width: 4rem;
+    min-width: 4rem;
+}
+td.share {
+    vertical-align: middle;
+}
 
 .dist {
     display: flex;
