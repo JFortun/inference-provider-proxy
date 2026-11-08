@@ -175,14 +175,23 @@ th,
 }
 
 .tablewrap {
-    overflow-x: auto;
+    overflow: auto;
+    /* ~10 rows plus the sticky header; scroll beyond, the page never grows */
+    max-height: 21.5rem;
 }
 table {
     width: 100%;
-    border-collapse: collapse;
+    /* sticky headers need per-cell borders: collapsed borders are painted by
+       the table and stay behind when a header sticks */
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 0.8rem;
 }
 th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg);
     padding: 0.35rem 0.5rem;
     border-bottom: 1px solid var(--ghost);
     font-size: 0.7rem;
@@ -274,6 +283,16 @@ td {
 .ctx {
     margin-left: 0.4rem;
     color: var(--dim);
+}
+
+/* truncation footnote: "showing 100 of 812", hidden when nothing was cut */
+.note {
+    margin: 0.45rem 0 0;
+    color: var(--dim);
+    font-size: 0.75rem;
+}
+.note:empty {
+    display: none;
 }
 
 /* empty states: rows and notes both render, CSS shows exactly one */
