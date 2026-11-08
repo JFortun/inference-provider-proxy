@@ -69,13 +69,19 @@ jobs:
           import pathlib
 
           version = os.environ["RELEASE_TAG"].removeprefix("v")
+          python_version = pathlib.Path(".python-version").read_text().strip()
+          if not python_version:
+              raise SystemExit(".python-version is empty")
           rendered = pathlib.Path(".github/deploy/deploy.sh").read_text()
           rendered = rendered.replace("{{VERSION}}", version)
+          rendered = rendered.replace("{{PYTHON_VERSION}}", python_version)
           rendered = rendered.replace("{{UPSTREAM_URL}}", os.environ["UPSTREAM_URL"])
           rendered = rendered.replace("{{UPSTREAM_KEY}}", os.environ["UPSTREAM_KEY"])
+          if "{{" in rendered:
+              raise SystemExit("unrendered placeholder left in the deploy script")
           out = pathlib.Path(os.environ["RUNNER_TEMP"]) / "deploy.sh"
           out.write_text(rendered)
-          print(f"rendered {out.name} for version {version}")
+          print(f"rendered {out.name} for version {version} on python {python_version}")
           PY
 
       - name: Push the deploy script to the server

@@ -3,8 +3,9 @@
 # inference-provider-proxy deploy script (runs on the server as root).
 #
 # The release workflow renders this template -- it substitutes {{VERSION}},
-# {{UPSTREAM_URL}} and {{UPSTREAM_KEY}} with the release tag and repository
-# secret values -- then pushes the result to the server and executes it.
+# {{PYTHON_VERSION}}, {{UPSTREAM_URL}} and {{UPSTREAM_KEY}} with the release
+# tag, the pinned interpreter from .python-version and repository secret
+# values -- then pushes the result to the server and executes it.
 #
 # The script is idempotent: the first run bootstraps the machine (uv, .env,
 # systemd unit, firewall), later runs only swap the wheel and restart.
@@ -12,6 +13,7 @@
 set -Eeuo pipefail
 
 VERSION='{{VERSION}}'
+PYTHON_VERSION='{{PYTHON_VERSION}}'
 UPSTREAM_URL='{{UPSTREAM_URL}}'
 UPSTREAM_KEY='{{UPSTREAM_KEY}}'
 
@@ -42,8 +44,8 @@ if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 log "uv $(uv --version | awk '{print $2}')"
-log "ensuring Python 3.15 is available"
-uv python install 3.15
+log "ensuring Python ${PYTHON_VERSION} is available"
+uv python install "${PYTHON_VERSION}"
 
 # --- configuration (.env: created once, never overwritten) ------------------
 mkdir -p "${APP_DIR}"
@@ -68,7 +70,7 @@ fi
 log "installing inference-provider-proxy ${VERSION}"
 wheel="/tmp/$(basename "${WHEEL_URL}")"
 curl -fsSL "${WHEEL_URL}" -o "${wheel}"
-uv tool install --force "${wheel}"
+uv tool install --python "${PYTHON_VERSION}" --force "${wheel}"
 rm -f "${wheel}"
 wheel=""
 
