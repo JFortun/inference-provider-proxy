@@ -1,15 +1,26 @@
 name: Release
 
+# Cutting a release, in this order:
+#
+#   uv version X.Y.Z                              # pyproject.toml and uv.lock together
+#   git commit -am "chore(release): bump version to X.Y.Z" && git push   # onto main
+#   git tag -s vX.Y.Z && git push origin vX.Y.Z   # check-tag runs here, before any release exists
+#   gh release create vX.Y.Z --generate-notes --verify-tag
+#
+# check-tag also runs on release publish, so a tag pushed straight from the
+# Releases UI is still caught before the wheel, the sdist and the deploy.
 on:
   release:
     types: [published]
+  push:
+    tags: ["v*"]
 
 jobs:
-  attach-distributions:
-    name: Attach distributions
+  check-tag:
+    name: Check the tag matches the project version
     runs-on: ubuntu-latest
     permissions:
-      contents: write # upload the wheel and the sdist as release assets
+      contents: read
     steps:
       - uses: actions/checkout@v7
 
@@ -23,6 +34,19 @@ jobs:
             echo "::error::Tag '$GITHUB_REF_NAME' does not match the pyproject.toml version '$version'"
             exit 1
           fi
+
+  attach-distributions:
+    name: Attach distributions
+    needs: check-tag
+    if: github.event_name == 'release' # a bare tag push only runs the check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # upload the wheel and the sdist as release assets
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
 
       - name: Generate release notes when none were written
         if: github.event.release.body == null || github.event.release.body == ''
