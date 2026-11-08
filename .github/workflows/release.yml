@@ -44,7 +44,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency: deploy
-    permissions: {}
+    environment: production # creates a deployment record per release, no URL attached
+    permissions:
+      deployments: write # let the run publish its own deployment statuses
     steps:
       - uses: actions/checkout@v7
 
