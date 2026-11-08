@@ -8,6 +8,11 @@ dashboard.
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version
 
 __all__ = ["__version__"]
+
+try:
+    __version__ = version("inference-provider-proxy")
+except PackageNotFoundError:  # imported from a bare source tree, never installed
+    __version__ = "0+unknown"
