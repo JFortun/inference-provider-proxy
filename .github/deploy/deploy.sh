@@ -18,7 +18,6 @@ UPSTREAM_KEY='{{UPSTREAM_KEY}}'
 APP_DIR=/opt/ipp
 PORT=13306
 SERVICE=ipp.service
-BIN_DIR=/usr/local/bin
 WHEEL_URL="https://github.com/JFortun/inference-provider-proxy/releases/download/v${VERSION}/inference_provider_proxy-${VERSION}-py3-none-any.whl"
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
@@ -59,28 +58,6 @@ EOF
 fi
 chmod 600 "${APP_DIR}/.env"
 
-# --- systemd unit (created once, kept as-is afterwards) ---------------------
-if [ ! -f "/etc/systemd/system/${SERVICE}" ]; then
-  log "creating systemd unit ${SERVICE}"
-  cat >"/etc/systemd/system/${SERVICE}" <<EOF
-[Unit]
-Description=inference-provider-proxy
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=${APP_DIR}
-ExecStart=${BIN_DIR}/ipp
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  systemctl daemon-reload
-fi
-
 # --- swap the wheel (stop first so the old venv is never yanked mid-run) ----
 if systemctl is-active --quiet "${SERVICE}"; then
   log "stopping ${SERVICE} for the upgrade"
@@ -91,10 +68,40 @@ fi
 log "installing inference-provider-proxy ${VERSION}"
 wheel="/tmp/ipp-wheel-${VERSION}.whl"
 curl -fsSL "${WHEEL_URL}" -o "${wheel}"
-uv tool install --force --bin-dir "${BIN_DIR}" "${wheel}"
+uv tool install --force "${wheel}"
 rm -f "${wheel}"
 wheel=""
-test -x "${BIN_DIR}/ipp"
+
+IPP_BIN="$(command -v ipp || true)"
+if [ -z "${IPP_BIN}" ]; then
+  log "ipp entry point not found on PATH after install"
+  exit 1
+fi
+
+# --- systemd unit (installed when missing, refreshed when this template differs)
+new_unit="$(mktemp)"
+cat >"${new_unit}" <<EOF
+[Unit]
+Description=inference-provider-proxy
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=${APP_DIR}
+ExecStart=${IPP_BIN}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+if ! cmp -s "${new_unit}" "/etc/systemd/system/${SERVICE}"; then
+  log "installing systemd unit ${SERVICE}"
+  install -m 644 "${new_unit}" "/etc/systemd/system/${SERVICE}"
+  systemctl daemon-reload
+fi
+rm -f "${new_unit}"
 
 # --- firewall (only when ufw is actually in use) ----------------------------
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
