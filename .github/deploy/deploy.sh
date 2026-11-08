@@ -36,11 +36,11 @@ on_error() {
 trap on_error ERR
 
 # --- uv and Python ----------------------------------------------------------
+export PATH="/root/.local/bin:/usr/local/bin:${PATH}"
 if ! command -v uv >/dev/null 2>&1; then
   log "uv not found, installing"
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
-export PATH="/root/.local/bin:/usr/local/bin:${PATH}"
 log "uv $(uv --version | awk '{print $2}')"
 log "ensuring Python 3.15 is available"
 uv python install 3.15
@@ -66,7 +66,7 @@ if systemctl is-active --quiet "${SERVICE}"; then
 fi
 
 log "installing inference-provider-proxy ${VERSION}"
-wheel="/tmp/ipp-wheel-${VERSION}.whl"
+wheel="/tmp/$(basename "${WHEEL_URL}")"
 curl -fsSL "${WHEEL_URL}" -o "${wheel}"
 uv tool install --force "${wheel}"
 rm -f "${wheel}"
