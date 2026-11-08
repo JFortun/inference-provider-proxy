@@ -96,7 +96,14 @@ jobs:
       - name: Execute the deploy script on the server
         env:
           SLUG: ${{ secrets.WEBDOCK_SERVER_SLUG }}
-        run: webdock scripts server-execute "$SLUG" "$SCRIPT_ID" --wait
+        run: |
+          set -euo pipefail
+          sid="$(webdock scripts server-list "$SLUG" --json | jq -r '[.body[] | select(.path == "/root/ipp-deploy.sh")][0].id // empty')"
+          if [ -z "$sid" ]; then
+            echo "::error::deploy script was not pushed to the server"
+            exit 1
+          fi
+          webdock scripts server-execute "$SLUG" "$sid" --wait
 
       - name: Verify the execution result
         env:
