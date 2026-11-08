@@ -3,11 +3,15 @@
 Markup and labels live in the HTML file; this module only computes values,
 table rows and pills, then substitutes them with ``string.Template``. A missing
 placeholder raises, so the template and the pinned dashboard contract cannot
-drift apart silently.
+drift apart silently. The substituted page is then collapsed onto literally
+empty ``<tbody></tbody>`` elements when a table has no rows, which is what the
+``:empty``-based empty states in ``styles.css`` match on.
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable, Sequence
 from html import escape
 from string import Template
 from typing import Any
@@ -17,7 +21,12 @@ from inference_provider_proxy.adapters.inbound.http.ui.assets import INDEX_HTML
 __all__ = ["render_dashboard"]
 
 _TEMPLATE = Template(INDEX_HTML)
+# A substituted empty <tbody> still carries the template's indentation, and
+# HTML ``:empty`` counts whitespace text nodes: the empty-state CSS in
+# styles.css only fires on a literally empty element.
+_EMPTY_TBODY = re.compile(r"<tbody>\s*</tbody>")
 _QUANTILES = ("p50", "p90", "p95", "p99", "max")
+_MAX_TABLE_ROWS = 100
 _HARD_ERRORS = frozenset(
     {
         "provider_busy",
@@ -176,6 +185,20 @@ def _model_chip(model: dict[str, Any]) -> str:
     return f'<span class="chip">{_e(model["id"])}{suffix}</span>'
 
 
+def _table_rows(items: Sequence[Any], render_row: Callable[[Any], str]) -> tuple[str, str]:
+    """Rows for one table, newest first, capped at ``_MAX_TABLE_ROWS``.
+
+    Returns the markup and a "showing N of M" footnote naming the rows that
+    were dropped, empty when nothing was dropped. The cap keeps the page
+    bounded: the meta-refresh re-downloads this markup every five seconds.
+    """
+    shown = items[:_MAX_TABLE_ROWS]
+    rows = "".join(render_row(item) for item in shown)
+    if len(items) <= _MAX_TABLE_ROWS:
+        return rows, ""
+    return rows, f"showing {len(shown):,} of {len(items):,}"
+
+
 def render_dashboard(document: dict[str, Any]) -> str:
     """Fill ``index.html`` for one dashboard document."""
     session = document["session"]
@@ -196,6 +219,9 @@ def render_dashboard(document: dict[str, Any]) -> str:
     busy = errors["by_kind"]["provider_busy"]
     worst_kind = max(errors["by_kind"].values())
     oldest = gate["oldest_queue_wait_s"] or max((item["waited_s"] for item in waiting), default=0.0)
+
+    episode_rows, episode_note = _table_rows(errors["recent"], _episode_row)
+    request_rows, request_note = _table_rows(document["recent_requests"], _request_row)
 
     values: dict[str, str] = {
         "generated": _time(document["generated_at"]),
@@ -247,8 +273,10 @@ def render_dashboard(document: dict[str, Any]) -> str:
         "oldest_wait": _fmt_s(gate["oldest_queue_wait_s"]),
         "current_rows": "".join(_inflight_row(item) for item in gate["current"]),
         "queue_rows": "".join(_waiting_row(item, oldest) for item in waiting),
-        "episode_rows": "".join(_episode_row(item) for item in errors["recent"]),
-        "request_rows": "".join(_request_row(item) for item in document["recent_requests"]),
+        "episode_rows": episode_rows,
+        "episode_note": episode_note,
+        "request_rows": request_rows,
+        "request_note": request_note,
         "client_rows": "".join(
             _client_row(item, max((c["requests"] for c in clients), default=0)) for item in clients
         ),
@@ -269,4 +297,4 @@ def render_dashboard(document: dict[str, Any]) -> str:
         values[f"count_{kind}"] = str(count)
         values[f"width_{kind}"] = str(_pct(count, worst_kind))
 
-    return _TEMPLATE.substitute(values)
+    return _EMPTY_TBODY.sub("<tbody></tbody>", _TEMPLATE.substitute(values))

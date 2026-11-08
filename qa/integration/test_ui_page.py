@@ -37,6 +37,9 @@ async def test_index_renders_the_zero_traffic_page(asgi_client_factory) -> None:
     assert "expected 0" in body
     assert "null" not in body
     assert ">None<" not in body
+    # Whitespace-only tbodies were collapsed: the :empty states can fire.
+    assert "<tbody></tbody>" in body
+    assert '<p class="note"></p>' in body
 
 
 async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
@@ -51,6 +54,10 @@ async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
     # Empty rows are hidden by CSS so the notes in index.html take over.
     assert "table:has(tbody:empty)" in response.text
     assert "+ .empty" in response.text
+    # Bounded viewport with headers that stay put while it scrolls.
+    assert "max-height" in response.text
+    assert "position: sticky" in response.text
+    assert ".note:empty" in response.text
 
 
 async def test_populated_page_renders_every_section_and_escapes(
@@ -196,3 +203,59 @@ async def test_populated_page_renders_every_section_and_escapes(
     assert "in-flight / capacity" in body
     assert "curl/8.5" in body
     assert "128k" in body
+    # Under the render cap: no truncation footnote.
+    assert '<p class="note"></p>' in body
+    assert "showing" not in body
+
+
+def _request_row_source(i: int) -> dict[str, object]:
+    return {
+        "request_id": f"r{i}",
+        "at": "2026-01-01T00:00:00Z",
+        "client": f"host-{i}",
+        "model": "m",
+        "streaming": False,
+        "status": 200,
+        "queue_wait_ms": 1,
+        "queue_position": None,
+        "ttfb_ms": 1,
+        "duration_ms": 1,
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+        "aborted": False,
+        "provider_id": None,
+        "provider_correlation_id": None,
+    }
+
+
+def _episode_row_source(i: int) -> dict[str, object]:
+    return {
+        "at": "2026-01-01T00:00:00Z",
+        "kind": "upstream_5xx",
+        "status": 502,
+        "model": "m",
+        "client": f"ep-{i}",
+        "provider_correlation_id": None,
+        "gate_in_flight": 1,
+        "gate_capacity": 2,
+    }
+
+
+async def test_tables_render_100_rows_newest_first_then_footnote(
+    asgi_client_factory,
+) -> None:
+    harness = build_harness(_handler)
+    client = asgi_client_factory(harness.app)
+    document = (await client.get("/dashboard")).json()
+
+    # Newest first, as the contract promises: 0 is the newest row.
+    document["recent_requests"] = [_request_row_source(i) for i in range(150)]
+    document["errors"]["recent"] = [_episode_row_source(i) for i in range(120)]
+
+    body = render_dashboard(document)
+
+    assert "host-0" in body and "host-99" in body
+    assert "host-100" not in body and "host-149" not in body  # dropped
+    assert "ep-99" in body and "ep-119" not in body  # dropped
+    assert body.count("showing 100 of 150") == 1
+    assert body.count("showing 100 of 120") == 1
