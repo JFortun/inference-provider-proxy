@@ -1,6 +1,6 @@
 [project]
 name = "inference-provider-proxy"
-version = "0.2.0"
+version = "0.3.0"
 description = "A LAN proxy that owns a single provider key, serializes chat requests, and exposes an OpenAI-compatible surface plus a session dashboard."
 readme = "README.md"
 requires-python = ">=3.15"
