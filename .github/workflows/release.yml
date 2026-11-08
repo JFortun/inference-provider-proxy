@@ -37,3 +37,113 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+
+  deploy:
+    name: Deploy
+    needs: attach-distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency: deploy
+    permissions: {}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the deploy CLI
+        run: curl -fsSL https://cli-src.webdock.tech/install/linux.sh | sudo bash
+
+      - name: Authenticate the deploy CLI
+        env:
+          WEBDOCK_TOKEN: ${{ secrets.WEBDOCK_API_TOKEN }}
+        run: webdock init -t "$WEBDOCK_TOKEN"
+
+      - name: Render the deploy script
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          UPSTREAM_URL: ${{ secrets.IPP_UPSTREAM_BASE_URL }}
+          UPSTREAM_KEY: ${{ secrets.IPP_UPSTREAM_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
+          rendered = pathlib.Path(".github/deploy/deploy.sh").read_text()
+          rendered = rendered.replace("{{VERSION}}", version)
+          rendered = rendered.replace("{{UPSTREAM_URL}}", os.environ["UPSTREAM_URL"])
+          rendered = rendered.replace("{{UPSTREAM_KEY}}", os.environ["UPSTREAM_KEY"])
+          out = pathlib.Path(os.environ["RUNNER_TEMP"]) / "deploy.sh"
+          out.write_text(rendered)
+          print(f"rendered {out.name} for version {version}")
+          PY
+
+      - name: Push the deploy script to the server
+        env:
+          SLUG: ${{ secrets.WEBDOCK_SERVER_SLUG }}
+        run: |
+          set -euo pipefail
+          content="$(cat "$RUNNER_TEMP/deploy.sh")"
+          id="$(webdock scripts list --json | jq -r '[.body[] | select(.name == "ipp-deploy")][0].id // empty')"
+          if [ -n "$id" ]; then
+            webdock scripts update "$id" "ipp-deploy" "ipp-deploy.sh" "$content" --json >/dev/null
+          else
+            webdock scripts create "ipp-deploy" "ipp-deploy.sh" "$content" --json >/dev/null
+            id="$(webdock scripts list --json | jq -r '[.body[] | select(.name == "ipp-deploy")][0].id // empty')"
+          fi
+          test -n "$id"
+          webdock scripts server-create "$SLUG" "$id" /root/ipp-deploy.sh --executable >/dev/null
+          echo "SCRIPT_ID=$id" >> "$GITHUB_ENV"
+
+      - name: Execute the deploy script on the server
+        env:
+          SLUG: ${{ secrets.WEBDOCK_SERVER_SLUG }}
+        run: webdock scripts server-execute "$SLUG" "$SCRIPT_ID" --wait
+
+      - name: Verify the execution result
+        env:
+          SLUG: ${{ secrets.WEBDOCK_SERVER_SLUG }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          cb="$(webdock scripts server-list "$SLUG" --json | jq -r '[.body[] | select(.path == "/root/ipp-deploy.sh")][0].lastRunCallbackId // empty')"
+          if [ -z "$cb" ]; then
+            echo "::error::no recorded run for the deploy script"
+            exit 1
+          fi
+          ev="$(webdock events list --json -l 30 -y execute-file | jq -c --arg cb "$cb" '[.body[] | select(.callbackId == $cb)][0] // empty')"
+          if [ -z "$ev" ]; then
+            echo "::error::execution event not found"
+            exit 1
+          fi
+          status="$(jq -r '.status' <<<"$ev")"
+          message="$(jq -r '.message // ""' <<<"$ev")"
+          if [ -n "$message" ]; then
+            printf '%s\n' "$message"
+          fi
+          if [ "$status" != "finished" ]; then
+            echo "::error::deploy script ended with status '$status'"
+            exit 1
+          fi
+          if ! grep -F "DEPLOY OK $version" <<<"$message" >/dev/null; then
+            echo "::warning::status is finished but no 'DEPLOY OK $version' marker was returned in the event message"
+          fi
+
+      - name: Verify the new version is serving
+        env:
+          PROBE_URL: ${{ secrets.DEPLOY_PROBE_URL }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          want="${RELEASE_TAG#v}"
+          for i in $(seq 1 30); do
+            body="$(curl -fsS --max-time 10 "$PROBE_URL/dashboard" 2>/dev/null || true)"
+            got="$(jq -r '.session.package_version // empty' <<<"$body" 2>/dev/null || true)"
+            if [ "$got" = "$want" ]; then
+              echo "verified: package_version=$got"
+              exit 0
+            fi
+            echo "attempt $i: got '${got:-none}', want '$want'"
+            sleep 5
+          done
+          echo "::error::service never reported version $want"
+          exit 1
