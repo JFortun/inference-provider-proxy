@@ -43,6 +43,26 @@ Every setting uses the `IPP_` prefix. The ones you are most likely to touch:
 
 `.env.example` lists the full set (upstream/stream timeouts, cache TTLs, access logging, metrics retention).
 
+## Windows
+
+The [Setup](#setup) and [Run](#run) steps work in PowerShell with two
+changes:
+
+- Install [`uv`](https://docs.astral.sh/uv/) with
+  `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`, then
+  `uv python install 3.15` (put `%USERPROFILE%\.local\bin` on `PATH` if
+  `uv` is not recognized).
+- Add `--no-dev` to `uv sync` and `uv run`: the dev group builds
+  [`pyyaml`](https://github.com/yaml/pyyaml/issues/981) and
+  [`zstandard`](https://github.com/indygreg/python-zstandard/issues/354)
+  from source, since neither publishes CPython 3.15 wheels yet (MSVC
+  required; `PYYAML_FORCE_LIBYAML=0` covers `pyyaml` alone).
+
+The `GET` checks need no changes; the [two-machine check](#two-machine-check)
+smoke test ends in `SMOKE PASS`, its schema check reporting `skip` without
+the dev group. Serving the LAN (`IPP_BIND_HOST=0.0.0.0`) requires allowing
+`python.exe` through the Windows Defender firewall.
+
 ## Run
 
 ```sh
