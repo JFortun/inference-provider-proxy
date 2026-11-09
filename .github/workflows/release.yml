@@ -1,14 +1,17 @@
 name: Release
 
-# Cutting a release, in this order:
+# Cutting a release: push the tag, CI does the rest. One command runs the
+# first two lines; the manual form is below.
+#
+#   scripts/release.sh X.Y.Z
 #
 #   uv version X.Y.Z                              # pyproject.toml and uv.lock together
 #   git commit -am "chore(release): bump version to X.Y.Z" && git push   # onto main
-#   git tag -s vX.Y.Z && git push origin vX.Y.Z   # check-tag runs here, before any release exists
-#   gh release create vX.Y.Z --generate-notes --verify-tag
+#   git tag -s vX.Y.Z && git push origin vX.Y.Z   # check-tag, then the release, assets, deploy
 #
-# check-tag also runs on release publish, so a tag pushed straight from the
-# Releases UI is still caught before the wheel, the sdist and the deploy.
+# check-tag gates everything downstream, so a tag whose version does not match
+# pyproject.toml never produces a release at all: delete the tag, bump, retag.
+# A release published by hand still runs the same check as a backstop.
 on:
   release:
     types: [published]
@@ -38,18 +41,30 @@ jobs:
   attach-distributions:
     name: Attach distributions
     needs: check-tag
-    if: github.event_name == 'release' # a bare tag push only runs the check
     runs-on: ubuntu-latest
     permissions:
-      contents: write # upload the wheel and the sdist as release assets
+      contents: write # create the release and upload the wheel and the sdist
     steps:
       - uses: actions/checkout@v7
+
+      - name: Create the release from the tag
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists"
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+          fi
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.3.0
 
       - name: Generate release notes when none were written
-        if: github.event.release.body == null || github.event.release.body == ''
+        if: >-
+          github.event_name == 'release' &&
+          (github.event.release.body == null || github.event.release.body == '')
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$GITHUB_REF_NAME" --generate-notes
