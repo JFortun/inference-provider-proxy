@@ -194,6 +194,32 @@ th,
     /* ~10 rows plus the sticky header; scroll beyond, the page never grows */
     max-height: 21.5rem;
 }
+
+/* engines split, so both spellings ship: standard properties for
+   Firefox/Chromium, WebKit pseudo-elements for Safari */
+html,
+.tablewrap {
+    scrollbar-width: thin;
+    scrollbar-color: var(--dim) transparent;
+}
+*::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+    background: var(--dim);
+    border: 2px solid var(--bg);
+    border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--green);
+}
+*::-webkit-scrollbar-corner {
+    background: var(--bg);
+}
 table {
     width: 100%;
     /* sticky headers need per-cell borders: collapsed borders are painted by

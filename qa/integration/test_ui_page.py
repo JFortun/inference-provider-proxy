@@ -58,6 +58,8 @@ async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
     assert "max-height" in response.text
     assert "position: sticky" in response.text
     assert ".note:empty" in response.text
+    assert "scrollbar-color" in response.text
+    assert "::-webkit-scrollbar" in response.text
 
 
 async def test_populated_page_renders_every_section_and_escapes(
