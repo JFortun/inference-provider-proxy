@@ -53,7 +53,6 @@ main {
 .grid2 {
     display: grid;
     gap: 1rem;
-    align-items: start;
 }
 .kpis {
     grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
@@ -79,6 +78,22 @@ main {
         font-size: 0.75rem;
         font-weight: 500;
     }
+}
+/* size containment keeps the 100-row table from sizing the grid row; the
+   min-height is the stacked-layout fallback: header + ~10 rows + note */
+.card--fill {
+    contain: size;
+    min-height: 27rem;
+    display: flex;
+    flex-direction: column;
+}
+.card--fill .tablewrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+}
+.card--fill .tablewrap:has(tbody:empty) {
+    display: none;
 }
 .brand span,
 .big span,

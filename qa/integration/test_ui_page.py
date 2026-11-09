@@ -209,6 +209,7 @@ async def test_populated_page_renders_every_section_and_escapes(
     assert '<th class="share">Share</th>' in body
     assert '<td class="share"><span class="bar"><i style="width: 100%">' in body
     assert "128k" in body
+    assert 'class="card card--fill"' in body
     # Under the render cap: no truncation footnote.
     assert '<p class="note"></p>' in body
     assert "showing" not in body
@@ -265,3 +266,17 @@ async def test_tables_render_100_rows_newest_first_then_footnote(
     assert "ep-99" in body and "ep-119" not in body  # dropped
     assert body.count("showing 100 of 150") == 1
     assert body.count("showing 100 of 120") == 1
+
+
+async def test_styles_css_stretches_cards_to_their_row(asgi_client_factory) -> None:
+    harness = build_harness(_handler)
+    client = asgi_client_factory(harness.app)
+
+    response = await client.get("/styles.css")
+
+    assert response.status_code == 200
+    text = response.text
+    assert "align-items: start" not in text
+    assert "contain: size" in text
+    assert "min-height: 27rem" in text
+    assert ".card--fill .tablewrap" in text
