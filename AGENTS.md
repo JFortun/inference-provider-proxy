@@ -28,3 +28,4 @@ No workflow in [.github/workflows](.github/workflows) runs tests, lint or type c
 - **Never stage `.env`** or a real credential, and never hardcode the provider key in source, tests or fixtures; `.env.example` stays placeholders only (see [README.md#setup](README.md#setup)).
 - **Client authentication is a design decision, not a local improvement.** The proxy is deliberately open on a trusted LAN; ask before introducing credentials.
 - **Never push, amend or rebase an existing commit** unless explicitly asked (the [commit skill](.agents/skills/conventional-commit/SKILL.md) says the same).
+- **A comment is a last resort; needing one is a refactor signal.** Comment only where the code genuinely cannot be clear, never to narrate code, tests or styles that already read plainly. When a comment feels necessary, restructure instead and discuss the refactor first.
