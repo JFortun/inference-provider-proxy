@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Cut a release: bump the version, push it to main, tag it. CI does the rest:
-# the tag push runs the version check, creates the release with its notes,
-# builds and attaches the wheel and the sdist, then deploys (see
+# the tag push stamps its version onto the build, creates the release with
+# its notes, builds and attaches the wheel and the sdist, then deploys (see
 # .github/workflows/release.yml).
 #
 # Usage: scripts/release.sh X.Y.Z
@@ -60,7 +60,7 @@ git tag -s "${TAG}" -m "${TAG}"
 git push origin "${TAG}"
 
 echo
-echo "pushed ${TAG}: CI runs check-tag, then creates the release, attaches"
+echo "pushed ${TAG}: CI stamps the version, creates the release, attaches"
 echo "the wheel and the sdist, and deploys. Watch it with:"
 echo "  gh run list --workflow Release --limit 1"
 echo "  gh run watch <run-id>"

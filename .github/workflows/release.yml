@@ -7,11 +7,11 @@ name: Release
 #
 #   uv version X.Y.Z                              # pyproject.toml and uv.lock together
 #   git commit -am "chore(release): bump version to X.Y.Z" && git push   # onto main
-#   git tag -s vX.Y.Z && git push origin vX.Y.Z   # check-tag, then the release, assets, deploy
+#   git tag -s vX.Y.Z && git push origin vX.Y.Z   # stamp, release, assets, deploy
 #
-# check-tag gates everything downstream, so a tag whose version does not match
-# pyproject.toml never produces a release at all: delete the tag, bump, retag.
-# A release published by hand still runs the same check as a backstop.
+# The tag is the version that ships: CI stamps it onto the checkout before
+# building, so a tag cut without the bump still releases correctly and only
+# reports the drift as a warning.
 on:
   release:
     types: [published]
@@ -19,33 +19,28 @@ on:
     tags: ["v*"]
 
 jobs:
-  check-tag:
-    name: Check the tag matches the project version
+  attach-distributions:
+    name: Attach distributions
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # create the release and upload the wheel and the sdist
     steps:
       - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.3.0
 
-      - name: Check the tag matches the project version
+      - name: Stamp the tag version onto the checkout
         run: |
-          version="$(uv version --short)"
-          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
-            echo "::error::Tag '$GITHUB_REF_NAME' does not match the pyproject.toml version '$version'"
-            exit 1
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          declared="$(uv version --short)"
+          if [ "$declared" != "$version" ]; then
+            echo "::warning::Tag '$GITHUB_REF_NAME' ships $version but pyproject.toml declares $declared; stamping the checkout"
+            echo "Tag \`$GITHUB_REF_NAME\` ships \`$version\`; pyproject.toml declared \`$declared\` (stamped for this build)." >> "$GITHUB_STEP_SUMMARY"
+            uv version "$version"
           fi
-
-  attach-distributions:
-    name: Attach distributions
-    needs: check-tag
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # create the release and upload the wheel and the sdist
-    steps:
-      - uses: actions/checkout@v7
+          echo "building release $version (pyproject $(uv version --short))"
 
       - name: Create the release from the tag
         if: github.event_name == 'push'
@@ -57,9 +52,6 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
           fi
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v10.3.0
 
       - name: Generate release notes when none were written
         if: >-
