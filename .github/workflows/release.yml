@@ -1,65 +1,160 @@
 name: Release
 
-# Cutting a release: push the tag, CI does the rest. One command runs the
-# first two lines; the manual form is below.
+# Cutting a release: run this workflow from the Actions tab and pick major,
+# minor or patch from the dropdown; everything else is automatic.
 #
-#   scripts/release.sh X.Y.Z
+# The bump job commits the new version to pyproject.toml and uv.lock on main
+# (authenticated with RELEASE_PUSH_TOKEN so the branch ruleset lets it
+# through), then tags that commit. The rest of the run builds the wheel and
+# the sdist, publishes the release with generated notes, and deploys.
 #
-#   uv version X.Y.Z                              # pyproject.toml and uv.lock together
-#   git commit -am "chore(release): bump version to X.Y.Z" && git push   # onto main
-#   git tag -s vX.Y.Z && git push origin vX.Y.Z   # stamp, release, assets, deploy
-#
-# The tag is the version that ships: CI stamps it onto the checkout before
-# building, so a tag cut without the bump still releases correctly and only
-# reports the drift as a warning.
+# This dispatch is the only trigger: a hand-published release or a manual tag
+# push does nothing. Recover a run that failed partway with Re-run failed
+# jobs, which reuses the bump outputs so the version is never advanced twice.
 on:
-  release:
-    types: [published]
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: Version component to bump
+        type: choice
+        required: true
+        default: patch
+        options:
+          - major
+          - minor
+          - patch
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
+  bump:
+    name: Bump the version and tag it
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # the push authenticates with RELEASE_PUSH_TOKEN instead
+    outputs:
+      version: ${{ steps.target.outputs.version }}
+      tag: ${{ steps.target.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PUSH_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Compute the release version
+        id: target
+        env:
+          RELEASE_TYPE: ${{ inputs['release-type'] }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          import re
+          import subprocess
+          import sys
+
+          def bump(version, kind):
+              x, y, z = (int(part) for part in version.split("."))
+              if kind == "major":
+                  return f"{x + 1}.0.0"
+              if kind == "minor":
+                  return f"{x}.{y + 1}.0"
+              return f"{x}.{y}.{z + 1}"
+
+          def key(version):
+              return tuple(int(part) for part in version.split("."))
+
+          kind = os.environ["RELEASE_TYPE"]
+          declared = subprocess.run(
+              ["uv", "version", "--short"], capture_output=True, text=True, check=True
+          ).stdout.strip()
+          released = [
+              tag[1:]
+              for tag in subprocess.run(
+                  ["git", "tag", "--list", "v*"], capture_output=True, text=True, check=True
+              ).stdout.split()
+              if re.fullmatch(r"v\d+\.\d+\.\d+", tag)
+          ]
+          latest = max(released, key=key) if released else None
+          if latest is None:
+              target = bump(declared, kind)
+          elif key(declared) > key(latest):
+              target = declared
+          else:
+              target = bump(latest, kind)
+          print(
+              f"declared {declared}, latest release {latest or 'none'}, {kind} -> {target}",
+              file=sys.stderr,
+          )
+          print(f"version={target}")
+          print(f"tag=v{target}")
+          PY
+
+      - name: Bump pyproject and tag the commit
+        env:
+          RELEASE_TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "::error::tag ${RELEASE_TAG} already exists; if an earlier run stopped after tagging, use Re-run failed jobs, otherwise dispatch a bigger bump"
+            exit 1
+          fi
+          if [ "$(uv version --short)" != "$version" ]; then
+            uv version "$version"
+            git add pyproject.toml uv.lock
+            git commit -m "chore(release): bump version to ${version}"
+            git push origin HEAD:main
+          fi
+          git tag -a "${RELEASE_TAG}" -m "${RELEASE_TAG}"
+          git push origin "${RELEASE_TAG}"
+          echo "tagged ${RELEASE_TAG} on $(git rev-parse --short HEAD)"
+
   attach-distributions:
     name: Attach distributions
+    needs: bump
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write # create the release and upload the wheel and the sdist
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.3.0
 
       - name: Stamp the tag version onto the checkout
+        env:
+          RELEASE_TAG: ${{ needs.bump.outputs.tag }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           declared="$(uv version --short)"
           if [ "$declared" != "$version" ]; then
-            echo "::warning::Tag '$GITHUB_REF_NAME' ships $version but pyproject.toml declares $declared; stamping the checkout"
-            echo "Tag \`$GITHUB_REF_NAME\` ships \`$version\`; pyproject.toml declared \`$declared\` (stamped for this build)." >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::Tag '$RELEASE_TAG' ships $version but pyproject.toml declares $declared; stamping the checkout"
+            echo "Tag \`$RELEASE_TAG\` ships \`$version\`; pyproject.toml declared \`$declared\` (stamped for this build)." >> "$GITHUB_STEP_SUMMARY"
             uv version "$version"
           fi
           echo "building release $version (pyproject $(uv version --short))"
 
       - name: Create the release from the tag
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.bump.outputs.tag }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "release $GITHUB_REF_NAME already exists"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "release $RELEASE_TAG already exists"
           else
-            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --generate-notes
           fi
-
-      - name: Generate release notes when none were written
-        if: >-
-          github.event_name == 'release' &&
-          (github.event.release.body == null || github.event.release.body == '')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$GITHUB_REF_NAME" --generate-notes
 
       - name: Build the wheel and the sdist
         run: uv build
@@ -67,7 +162,8 @@ jobs:
       - name: Attach the distributions to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          RELEASE_TAG: ${{ needs.bump.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber
 
   deploy:
     name: Deploy
@@ -80,6 +176,8 @@ jobs:
       deployments: write # let the run publish its own deployment statuses
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
 
       - name: Install the deploy CLI
         run: curl -fsSL https://cli-src.webdock.tech/install/linux.sh | sudo bash
@@ -91,7 +189,7 @@ jobs:
 
       - name: Render the deploy script
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.bump.outputs.tag }}
           UPSTREAM_URL: ${{ secrets.IPP_UPSTREAM_BASE_URL }}
           UPSTREAM_KEY: ${{ secrets.IPP_UPSTREAM_API_KEY }}
         run: |
@@ -147,7 +245,7 @@ jobs:
       - name: Verify the execution result
         env:
           SLUG: ${{ secrets.WEBDOCK_SERVER_SLUG }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.bump.outputs.tag }}
         run: |
           set -euo pipefail
           version="${RELEASE_TAG#v}"
@@ -177,7 +275,7 @@ jobs:
       - name: Verify the new version is serving
         env:
           PROBE_URL: ${{ secrets.DEPLOY_PROBE_URL }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.bump.outputs.tag }}
         run: |
           set -euo pipefail
           want="${RELEASE_TAG#v}"
