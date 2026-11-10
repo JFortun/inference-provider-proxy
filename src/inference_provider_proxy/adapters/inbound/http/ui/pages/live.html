@@ -1,0 +1,45 @@
+<section class="card">
+    <h2>Concurrency</h2>
+    <div class="stats">
+        <span><b>$capacity</b> capacity</span>
+        <span><b>$in_flight</b> in flight</span>
+        <span><b>$queued</b> queued</span>
+        <span><b>$free</b> free</span>
+        <span><b>$admitted</b> admitted</span>
+        <span><b>$rejected_full</b> rejected full</span>
+        <span><b>$rejected_timeout</b> rejected timeout</span>
+        <span><b>$cancelled_waiting</b> cancelled waiting</span>
+        <span>oldest wait <b>$oldest_wait</b></span>
+    </div>
+    <div class="grid2">
+        <div>
+            <h3>Holding the key</h3>
+            <div class="tablewrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Request</th>
+                            <th>Client</th>
+                            <th>Model</th>
+                            <th></th>
+                            <th>Elapsed</th>
+                            <th>TTFB</th>
+                            <th>Started</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        $current_rows
+                    </tbody>
+                </table>
+            </div>
+            <p class="empty">slot free</p>
+        </div>
+        <div>
+            <h3>Queue</h3>
+            <ol class="queue">
+                $queue_rows
+                <li class="empty">queue empty</li>
+            </ol>
+        </div>
+    </div>
+</section>

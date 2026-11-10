@@ -1,18 +1,65 @@
-"""``GET /`` serves the dashboard as HTML + CSS with no client-side script."""
+"""The HTML UI: one shell with a sidebar, one route per section, no script."""
 
 from __future__ import annotations
 
 import httpx
+import pytest
 
-from inference_provider_proxy.adapters.inbound.http.ui.render import render_dashboard
+from inference_provider_proxy.adapters.inbound.http.ui.render import render_page
 from qa.integration.conftest import build_harness
+
+# One sidebar entry per section; "/" is the dashboard overview.
+ROUTES = {
+    "dashboard": "/",
+    "live": "/live",
+    "requests": "/requests",
+    "errors": "/errors",
+    "clients": "/clients",
+    "upstream": "/upstream",
+}
+
+# What each route must show, and what belongs to the other routes only: one
+# category per page is the whole point of the sidebar.
+CONTAINS = {
+    "/": ("<h2>Gate</h2>", "<h2>Latency</h2>", "provider busy 0 · ok"),
+    "/live": (
+        "<h2>Concurrency</h2>",
+        "Holding the key",
+        "slot free",
+        "queue empty",
+        "<tbody></tbody>",
+    ),
+    "/requests": (
+        "<h2>Recent requests</h2>",
+        "no requests yet",
+        "<tbody></tbody>",
+        '<p class="note"></p>',
+    ),
+    "/errors": (
+        "<h2>Errors by kind</h2>",
+        "no error episodes",
+        "expected 0",
+        "<tbody></tbody>",
+        '<p class="note"></p>',
+    ),
+    "/clients": ("<h2>Clients</h2>", "no clients yet", "<tbody></tbody>"),
+    "/upstream": ("<h2>Upstream</h2>", "retries", '<div class="chips">'),
+}
+ABSENT = {
+    "/": ("<h2>Recent requests</h2>", "<h2>Clients</h2>", "Holding the key"),
+    "/live": ("<h2>Latency</h2>", "<h2>Recent requests</h2>"),
+    "/requests": ("<h2>Clients</h2>", "<h2>Errors by kind</h2>"),
+    "/errors": ("<h2>Recent requests</h2>", "<h2>Clients</h2>"),
+    "/clients": ("<h2>Upstream</h2>", "<h2>Recent requests</h2>"),
+    "/upstream": ("<h2>Clients</h2>", "<h2>Recent requests</h2>"),
+}
 
 
 def _handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(404, json={"error": "not found"})
 
 
-async def test_index_renders_the_zero_traffic_page(asgi_client_factory) -> None:
+async def test_index_renders_the_zero_traffic_overview(asgi_client_factory) -> None:
     harness = build_harness(_handler)
     client = asgi_client_factory(harness.app)
 
@@ -28,18 +75,42 @@ async def test_index_renders_the_zero_traffic_page(asgi_client_factory) -> None:
     assert "<script" not in body.lower()
     # Everything substituted; nothing left as a raw placeholder.
     assert "$" not in body
+    # The shell, not just the content, carries the session identity.
+    assert "generated" in body and "uptime" in body
     # Empty states rather than raw nulls or missing sections.
-    assert "slot free" in body
-    assert "queue empty" in body
-    assert "no requests yet" in body
-    assert "no clients yet" in body
-    assert "no error episodes" in body
-    assert "expected 0" in body
     assert "null" not in body
     assert ">None<" not in body
-    # Whitespace-only tbodies were collapsed: the :empty states can fire.
-    assert "<tbody></tbody>" in body
-    assert '<p class="note"></p>' in body
+    assert 'href="/" aria-current="page"' in body
+
+
+@pytest.mark.parametrize("page,route", list(ROUTES.items()))
+async def test_every_section_page_is_isolated_and_marks_itself_active(
+    asgi_client_factory, page: str, route: str
+) -> None:
+    harness = build_harness(_handler)
+    client = asgi_client_factory(harness.app)
+
+    response = await client.get(route)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    body = response.text
+    assert "<script" not in body.lower()
+    assert "$" not in body
+    assert "null" not in body
+    assert ">None<" not in body
+    # The shell repeats on every route, auto-refresh included.
+    assert 'http-equiv="refresh"' in body
+    assert '<nav class="sidebar" aria-label="Sections">' in body
+    # Exactly one active link, and it is this route's.
+    assert body.count('aria-current="page"') == 1
+    assert f'href="{route}" aria-current="page"' in body
+    for other in ROUTES.values():
+        assert f'href="{other}"' in body
+    for marker in CONTAINS[route]:
+        assert marker in body, f"{route} lost {marker!r}"
+    for marker in ABSENT[route]:
+        assert marker not in body, f"{route} leaked {marker!r}"
 
 
 async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
@@ -50,19 +121,31 @@ async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/css")
-    assert ".pill--bad" in response.text
-    # Empty rows are hidden by CSS so the notes in index.html take over.
-    assert "table:has(tbody:empty)" in response.text
-    assert "+ .empty" in response.text
+    text = response.text
+    assert ".pill--bad" in text
+    # Empty rows are hidden by CSS so the notes in the page templates take over.
+    assert "table:has(tbody:empty)" in text
+    assert "+ .empty" in text
     # Bounded viewport with headers that stay put while it scrolls.
-    assert "max-height" in response.text
-    assert "position: sticky" in response.text
-    assert ".note:empty" in response.text
-    assert "scrollbar-color" in response.text
-    assert "::-webkit-scrollbar" in response.text
+    assert "max-height" in text
+    assert "position: sticky" in text
+    assert ".note:empty" in text
+    assert "scrollbar-color" in text
+    assert "::-webkit-scrollbar" in text
+    # Shell: sticky sidebar with an active link, and a CSS-only drawer for
+    # small screens (the checkbox hack still needs no <script>).
+    assert ".sidebar" in text
+    assert 'a[aria-current="page"]' in text
+    assert ".nav-burger" in text
+    assert ".nav-toggle" in text
+    assert "@media (max-width: 56.25em)" in text
+    assert ".nav-toggle:checked ~ .sidebar" in text
+    # Scales with the browser's font-size preference: the base font is rem.
+    assert "font: 0.8125rem/1.5" in text
+    assert "13px" not in text
 
 
-async def test_populated_page_renders_every_section_and_escapes(
+async def test_populated_document_renders_every_page_and_escapes(
     asgi_client_factory,
 ) -> None:
     harness = build_harness(_handler)
@@ -182,7 +265,7 @@ async def test_populated_page_renders_every_section_and_escapes(
         {"pool": "free", "status": "active", "stale": False, "seconds_until_expiry": 3725}
     )
 
-    body = render_dashboard(document)
+    body = "".join(render_page(page, document) for page in ROUTES)
 
     assert "<script" not in body
     assert "&lt;script&gt;" in body
@@ -259,7 +342,7 @@ async def test_tables_render_100_rows_newest_first_then_footnote(
     document["recent_requests"] = [_request_row_source(i) for i in range(150)]
     document["errors"]["recent"] = [_episode_row_source(i) for i in range(120)]
 
-    body = render_dashboard(document)
+    body = render_page("requests", document) + render_page("errors", document)
 
     assert "host-0" in body and "host-99" in body
     assert "host-100" not in body and "host-149" not in body  # dropped

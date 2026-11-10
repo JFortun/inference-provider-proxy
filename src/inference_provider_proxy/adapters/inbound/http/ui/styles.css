@@ -13,7 +13,12 @@ body {
     margin: 0;
     background: var(--bg);
     color: var(--green);
-    font: 13px/1.5 var(--mono);
+    font: 0.8125rem/1.5 var(--mono);
+    display: grid;
+    grid-template-columns: 13rem minmax(0, 1fr);
+    grid-template-areas:
+        "side top"
+        "side main";
 }
 a {
     color: var(--green);
@@ -23,6 +28,7 @@ a:hover {
     color: var(--bg);
 }
 main {
+    grid-area: main;
     display: grid;
     gap: 1rem;
     max-width: 100rem;
@@ -30,6 +36,7 @@ main {
     padding: clamp(0.75rem, 3vw, 1.5rem);
 }
 .top {
+    grid-area: top;
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem 1.25rem;
@@ -48,7 +55,79 @@ main {
     font-size: 0.8rem;
 }
 
-/* auto-fit does the responsive work; no media queries needed */
+/* sidebar: the checkbox only holds the drawer state, its label is the control
+   that shows on small screens (CSS-only, there is no script anywhere) */
+.nav-toggle,
+.nav-burger {
+    display: none;
+}
+.sidebar {
+    grid-area: side;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.75rem;
+    border-right: 1px solid var(--ghost);
+}
+.sidebar a {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--ghost);
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 0.8rem;
+}
+.sidebar a[aria-current="page"] {
+    background: var(--green);
+    border-color: var(--green);
+    color: var(--bg);
+}
+
+@media (max-width: 56.25em) {
+    body {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "top"
+            "side"
+            "main";
+    }
+    .top {
+        justify-content: flex-start;
+    }
+    .nav-toggle {
+        display: block;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+    }
+    .nav-burger {
+        display: inline-block;
+        padding: 0.35rem 0.6rem;
+        border: 1px solid var(--ghost);
+        border-radius: 4px;
+        cursor: pointer;
+    }
+    body:has(.nav-toggle:focus-visible) .nav-burger {
+        outline: 2px solid var(--green);
+        outline-offset: 2px;
+    }
+    .sidebar {
+        display: none;
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--ghost);
+    }
+    .nav-toggle:checked ~ .sidebar {
+        display: flex;
+    }
+}
+
+/* auto-fit does the card-level responsive work within a page */
 .kpis,
 .grid2 {
     display: grid;

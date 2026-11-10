@@ -1,0 +1,89 @@
+<section class="kpis">
+    <article class="card">
+        <h2>Gate</h2>
+        <p class="big">$in_flight <span>/ $capacity</span></p>
+        <div class="meter">$meter_cells</div>
+        <p class="sub">queue $queued · free $free</p>
+    </article>
+    <article class="card">
+        <h2>Throughput</h2>
+        <p class="big">$rpm <span>rpm</span></p>
+        <p class="sub">$tok_per_s tok/s</p>
+        <p class="sub">
+            $requests_total total · $failed failed · $aborted
+            aborted
+        </p>
+    </article>
+    <article class="card">
+        <h2>Time to first byte</h2>
+        <p class="big">$ttfb_p50 <span>p50</span></p>
+        <p class="sub">p95 $ttfb_p95 · p99 $ttfb_p99</p>
+        <p class="sub">
+            prompt $prompt_tokens · completion $completion_tokens
+            tokens
+        </p>
+    </article>
+    <article class="card">
+        <h2>Errors</h2>
+        <p class="big">$errors_total</p>
+        <p class="sub">$busy_pill</p>
+        <p class="sub">upstream retries $retries</p>
+    </article>
+    <article class="card">
+        <h2>Subscription</h2>
+        <p class="big">$sub_status</p>
+        <p class="sub">
+            $sub_pool · expires in $expires $stale_pill
+        </p>
+        <p class="sub">checked $last_checked · $key_name</p>
+    </article>
+</section>
+
+<section class="card">
+    <h2>Concurrency</h2>
+    <div class="stats">
+        <span><b>$capacity</b> capacity</span>
+        <span><b>$in_flight</b> in flight</span>
+        <span><b>$queued</b> queued</span>
+        <span><b>$free</b> free</span>
+        <span><b>$admitted</b> admitted</span>
+        <span><b>$rejected_full</b> rejected full</span>
+        <span><b>$rejected_timeout</b> rejected timeout</span>
+        <span><b>$cancelled_waiting</b> cancelled waiting</span>
+        <span>oldest wait <b>$oldest_wait</b></span>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Latency</h2>
+    <div class="dist">
+        <span class="dist-name">queue wait</span
+        ><span class="bar bar--dist"
+            ><i style="width: $qw_width%"></i
+            ><span
+                class="tick"
+                style="left: $qw_tick%"
+            ></span></span
+        ><span class="dist-stats mono">$qw_stats</span>
+    </div>
+    <div class="dist">
+        <span class="dist-name">time to first byte</span
+        ><span class="bar bar--dist"
+            ><i style="width: $ttfb_width%"></i
+            ><span
+                class="tick"
+                style="left: $ttfb_tick%"
+            ></span></span
+        ><span class="dist-stats mono">$ttfb_stats</span>
+    </div>
+    <div class="dist">
+        <span class="dist-name">total duration</span
+        ><span class="bar bar--dist"
+            ><i style="width: $td_width%"></i
+            ><span
+                class="tick"
+                style="left: $td_tick%"
+            ></span></span
+        ><span class="dist-stats mono">$td_stats</span>
+    </div>
+</section>

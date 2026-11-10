@@ -1,0 +1,109 @@
+<section class="card">
+    <h2>Errors by kind</h2>
+    <div class="kinds">
+        <div class="kind">
+            <span>provider busy</span
+            ><span class="bar"
+                ><i
+                    style="width: $width_provider_busy%"
+                ></i></span
+            ><b class="num">$count_provider_busy</b>
+            <span
+                class="pill pill--ok"
+                title="non-zero: shared key, not a gate fault"
+                >expected 0</span
+            >
+        </div>
+        <div class="kind">
+            <span>queue timeout</span
+            ><span class="bar"
+                ><i
+                    style="width: $width_queue_timeout%"
+                ></i></span
+            ><b class="num">$count_queue_timeout</b>
+        </div>
+        <div class="kind">
+            <span>queue full</span
+            ><span class="bar"
+                ><i style="width: $width_queue_full%"></i></span
+            ><b class="num">$count_queue_full</b>
+        </div>
+        <div class="kind">
+            <span>upstream auth</span
+            ><span class="bar"
+                ><i
+                    style="width: $width_upstream_auth%"
+                ></i></span
+            ><b class="num">$count_upstream_auth</b>
+        </div>
+        <div class="kind">
+            <span>edge block</span
+            ><span class="bar"
+                ><i style="width: $width_edge_block%"></i></span
+            ><b class="num">$count_edge_block</b>
+        </div>
+        <div class="kind">
+            <span>not reserved</span
+            ><span class="bar"
+                ><i
+                    style="width: $width_not_reserved%"
+                ></i></span
+            ><b class="num">$count_not_reserved</b>
+        </div>
+        <div class="kind">
+            <span>upstream 5xx</span
+            ><span class="bar"
+                ><i
+                    style="width: $width_upstream_5xx%"
+                ></i></span
+            ><b class="num">$count_upstream_5xx</b>
+        </div>
+        <div class="kind">
+            <span>upstream unreachable</span
+            ><span class="bar"
+                ><i
+                    style="width: $width_upstream_unreachable%"
+                ></i></span
+            ><b class="num">$count_upstream_unreachable</b>
+        </div>
+        <div class="kind">
+            <span>client aborted</span
+            ><span class="bar"
+                ><i
+                    style="width: $width_client_aborted%"
+                ></i></span
+            ><b class="num">$count_client_aborted</b>
+        </div>
+        <div class="kind">
+            <span>unknown</span
+            ><span class="bar"
+                ><i style="width: $width_unknown%"></i></span
+            ><b class="num">$count_unknown</b>
+        </div>
+    </div>
+    <p class="sub">
+        provider busy: provider throttling, usually a shared
+        key, not a gate fault; gate: in-flight / capacity
+    </p>
+    <h3>Recent episodes</h3>
+    <div class="tablewrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Kind</th>
+                    <th>Status</th>
+                    <th>Gate</th>
+                    <th>Model</th>
+                    <th>Client</th>
+                    <th>Correlation</th>
+                </tr>
+            </thead>
+            <tbody>
+                $episode_rows
+            </tbody>
+        </table>
+    </div>
+    <p class="empty">no error episodes</p>
+    <p class="note">$episode_note</p>
+</section>
