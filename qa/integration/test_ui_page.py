@@ -44,7 +44,7 @@ CONTAINS = {
 }
 ABSENT = {
     "/": ("<h2>Recent requests</h2>", "<h2>Clients</h2>", "Holding the key"),
-    "/live": ("<h2>Latency</h2>", "<h2>Recent requests</h2>"),
+    "/live": ("<h2>Latency</h2>", "<h2>Recent requests</h2>", "grid2"),
     "/requests": ("<h2>Clients</h2>", "<h2>Errors by kind</h2>"),
     "/errors": ("<h2>Recent requests</h2>", "<h2>Clients</h2>"),
     "/clients": ("<h2>Upstream</h2>", "<h2>Recent requests</h2>"),
@@ -138,6 +138,11 @@ async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
     # no px font sizes: they ignore the browser's font-size setting
     assert "font: 0.8125rem/1.5" in text
     assert "13px" not in text
+    # equal outer tracks keep the header meta dead center; main centers in its
+    # column instead of hugging the sidebar; the live page is one column (#17)
+    assert "grid-template-columns: 1fr auto 1fr" in text
+    assert "justify-self: center" in text
+    assert ".grid2" not in text
 
 
 async def test_populated_document_renders_every_page_and_escapes(
