@@ -101,6 +101,8 @@ jobs:
           RELEASE_TAG: ${{ steps.target.outputs.tag }}
         run: |
           set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           version="${RELEASE_TAG#v}"
           if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
             echo "::error::tag ${RELEASE_TAG} already exists; if an earlier run stopped after tagging, use Re-run failed jobs, otherwise dispatch a bigger bump"
