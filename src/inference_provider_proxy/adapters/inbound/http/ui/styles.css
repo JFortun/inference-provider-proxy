@@ -32,7 +32,7 @@ main {
     display: grid;
     gap: 1rem;
     max-width: 100rem;
-    margin: auto;
+    margin: 0;
     padding: clamp(0.75rem, 3vw, 1.5rem);
 }
 .top {
@@ -56,16 +56,20 @@ main {
 }
 
 /* sidebar: the checkbox only holds the drawer state, its label is the control
-   that shows on small screens (CSS-only, there is no script anywhere) */
+   that shows on small screens (CSS-only, there is no script anywhere).
+   Fixed rather than a grid item: a height:100vh item spanning both rows would
+   share that height into the header row, and auto margins on a grid item
+   shrink-wrap it to fit-content instead of filling its column. */
 .nav-toggle,
 .nav-burger {
     display: none;
 }
 .sidebar {
     grid-area: side;
-    position: sticky;
+    position: fixed;
     top: 0;
-    align-self: start;
+    left: 0;
+    width: 13rem;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -118,6 +122,9 @@ main {
     .sidebar {
         display: none;
         position: static;
+        top: auto;
+        left: auto;
+        width: auto;
         height: auto;
         border-right: 0;
         border-bottom: 1px solid var(--ghost);

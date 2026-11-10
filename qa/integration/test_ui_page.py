@@ -132,7 +132,7 @@ async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
     assert ".note:empty" in text
     assert "scrollbar-color" in text
     assert "::-webkit-scrollbar" in text
-    # Shell: sticky sidebar with an active link, and a CSS-only drawer for
+    # Shell: the sidebar with an active link, and a CSS-only drawer for
     # small screens (the checkbox hack still needs no <script>).
     assert ".sidebar" in text
     assert 'a[aria-current="page"]' in text
@@ -140,6 +140,11 @@ async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
     assert ".nav-toggle" in text
     assert "@media (max-width: 56.25em)" in text
     assert ".nav-toggle:checked ~ .sidebar" in text
+    # The sidebar is fixed, not a grid item: a height:100vh item spanning both
+    # rows shares that height into the header row, and auto margins on a grid
+    # item shrink-wrap it to fit-content instead of filling its column.
+    assert "position: fixed" in text
+    assert "margin: auto" not in text
     # Scales with the browser's font-size preference: the base font is rem.
     assert "font: 0.8125rem/1.5" in text
     assert "13px" not in text
