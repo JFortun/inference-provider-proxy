@@ -8,7 +8,6 @@ import pytest
 from inference_provider_proxy.adapters.inbound.http.ui.render import render_page
 from qa.integration.conftest import build_harness
 
-# One sidebar entry per section; "/" is the dashboard overview.
 ROUTES = {
     "dashboard": "/",
     "live": "/live",
@@ -18,8 +17,6 @@ ROUTES = {
     "upstream": "/upstream",
 }
 
-# What each route must show, and what belongs to the other routes only: one
-# category per page is the whole point of the sidebar.
 CONTAINS = {
     "/": ("<h2>Gate</h2>", "<h2>Latency</h2>", "provider busy 0 · ok"),
     "/live": (
@@ -75,7 +72,6 @@ async def test_index_renders_the_zero_traffic_overview(asgi_client_factory) -> N
     assert "<script" not in body.lower()
     # Everything substituted; nothing left as a raw placeholder.
     assert "$" not in body
-    # The shell, not just the content, carries the session identity.
     assert "generated" in body and "uptime" in body
     # Empty states rather than raw nulls or missing sections.
     assert "null" not in body
@@ -99,10 +95,8 @@ async def test_every_section_page_is_isolated_and_marks_itself_active(
     assert "$" not in body
     assert "null" not in body
     assert ">None<" not in body
-    # The shell repeats on every route, auto-refresh included.
     assert 'http-equiv="refresh"' in body
     assert '<nav class="sidebar" aria-label="Sections">' in body
-    # Exactly one active link, and it is this route's.
     assert body.count('aria-current="page"') == 1
     assert f'href="{route}" aria-current="page"' in body
     for other in ROUTES.values():
@@ -132,20 +126,16 @@ async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
     assert ".note:empty" in text
     assert "scrollbar-color" in text
     assert "::-webkit-scrollbar" in text
-    # Shell: the sidebar with an active link, and a CSS-only drawer for
-    # small screens (the checkbox hack still needs no <script>).
     assert ".sidebar" in text
     assert 'a[aria-current="page"]' in text
     assert ".nav-burger" in text
     assert ".nav-toggle" in text
     assert "@media (max-width: 56.25em)" in text
     assert ".nav-toggle:checked ~ .sidebar" in text
-    # The sidebar is fixed, not a grid item: a height:100vh item spanning both
-    # rows shares that height into the header row, and auto margins on a grid
-    # item shrink-wrap it to fit-content instead of filling its column.
+    # review bugs: the 100vh grid-item sidebar inflated the header row, auto margins shrank main
     assert "position: fixed" in text
     assert "margin: auto" not in text
-    # Scales with the browser's font-size preference: the base font is rem.
+    # no px font sizes: they ignore the browser's font-size setting
     assert "font: 0.8125rem/1.5" in text
     assert "13px" not in text
 

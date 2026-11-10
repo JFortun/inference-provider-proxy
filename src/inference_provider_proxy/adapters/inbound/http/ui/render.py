@@ -24,7 +24,6 @@ __all__ = ["render_page"]
 
 _LAYOUT = Template(INDEX_HTML)
 _PAGE_TEMPLATES = {name: Template(html) for name, html in PAGE_HTML.items()}
-# One sidebar link per page; each page marks itself active in the shell.
 _NAV_CUR = tuple(f"cur_{name}" for name in PAGE_HTML)
 # A substituted empty <tbody> still carries the template's indentation, and
 # HTML ``:empty`` counts whitespace text nodes: the empty-state CSS in
