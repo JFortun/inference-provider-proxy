@@ -1,10 +1,12 @@
-"""Fill the page defined by ``ui/index.html`` with one dashboard document.
+"""Fill the shell ``ui/index.html`` with one dashboard document, one page at a time.
 
-Markup and labels live in the HTML file; this module only computes values,
-table rows and pills, then substitutes them with ``string.Template``. A missing
-placeholder raises, so the template and the pinned dashboard contract cannot
-drift apart silently. The substituted page is then collapsed onto literally
-empty ``<tbody></tbody>`` elements when a table has no rows, which is what the
+Markup and labels live in the HTML files: ``index.html`` is the shared shell
+(header, sidebar, content slot) and ``ui/pages/*.html`` is the ``<main>``
+content of one section page. This module only computes values, table rows and
+pills, then substitutes them with ``string.Template``. A missing placeholder
+raises, so the templates and the pinned dashboard contract cannot drift apart
+silently. The assembled page is then collapsed onto literally empty
+``<tbody></tbody>`` elements when a table has no rows, which is what the
 ``:empty``-based empty states in ``styles.css`` match on.
 """
 
@@ -16,11 +18,13 @@ from html import escape
 from string import Template
 from typing import Any
 
-from inference_provider_proxy.adapters.inbound.http.ui.assets import INDEX_HTML
+from inference_provider_proxy.adapters.inbound.http.ui.assets import INDEX_HTML, PAGE_HTML
 
-__all__ = ["render_dashboard"]
+__all__ = ["render_page"]
 
-_TEMPLATE = Template(INDEX_HTML)
+_LAYOUT = Template(INDEX_HTML)
+_PAGE_TEMPLATES = {name: Template(html) for name, html in PAGE_HTML.items()}
+_NAV_CUR = tuple(f"cur_{name}" for name in PAGE_HTML)
 # A substituted empty <tbody> still carries the template's indentation, and
 # HTML ``:empty`` counts whitespace text nodes: the empty-state CSS in
 # styles.css only fires on a literally empty element.
@@ -199,8 +203,8 @@ def _table_rows(items: Sequence[Any], render_row: Callable[[Any], str]) -> tuple
     return rows, f"showing {len(shown):,} of {len(items):,}"
 
 
-def render_dashboard(document: dict[str, Any]) -> str:
-    """Fill ``index.html`` for one dashboard document."""
+def _values(document: dict[str, Any]) -> dict[str, str]:
+    """Every placeholder the shell or any page fragment can hold."""
     session = document["session"]
     subscription = document["subscription"]
     gate = document["gate"]
@@ -296,5 +300,13 @@ def render_dashboard(document: dict[str, Any]) -> str:
     for kind, count in errors["by_kind"].items():
         values[f"count_{kind}"] = str(count)
         values[f"width_{kind}"] = str(_pct(count, worst_kind))
+    return values
 
-    return _EMPTY_TBODY.sub("<tbody></tbody>", _TEMPLATE.substitute(values))
+
+def render_page(page: str, document: dict[str, Any]) -> str:
+    """Fill the shell with the fragment named ``page`` for one dashboard document."""
+    values = _values(document)
+    active = f"cur_{page}"
+    values.update({name: ("page" if name == active else "false") for name in _NAV_CUR})
+    values["content"] = _PAGE_TEMPLATES[page].substitute(values)
+    return _EMPTY_TBODY.sub("<tbody></tbody>", _LAYOUT.substitute(values))

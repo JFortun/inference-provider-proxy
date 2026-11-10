@@ -12,7 +12,13 @@ It speaks the OpenAI dialect, so any OpenAI-compatible client works by changing 
 | `GET /v1/models`            | no     | Provider catalogue, short-TTL cached.                  |
 | `GET /v1/usage`             | no     | Entitlement, cached and background-refreshed.          |
 | `GET /dashboard`            | no     | One JSON document describing the whole session.        |
-| `GET /`                     | no     | The same document as an HTML page (HTML + CSS, no JS). |
+| `GET /`                     | no     | Dashboard overview: KPIs, gate counters, latency.      |
+| `GET /live`                 | no     | Gate detail: holder, queue, concurrency counters.       |
+| `GET /requests`             | no     | Recent requests table.                                 |
+| `GET /errors`               | no     | Errors by kind and recent episodes.                    |
+| `GET /clients`              | no     | Per-client activity.                                   |
+| `GET /upstream`             | no     | Upstream status and model list.                        |
+| `GET /styles.css`           | no     | The stylesheet for the pages above (HTML + CSS, no JS). |
 | `GET /healthz`              | no     | Cheap liveness; performs no provider call.             |
 
 ## Setup
@@ -128,7 +134,9 @@ uvx --from https://github.com/JFortun/inference-provider-proxy/releases/download
 
 ## The dashboard
 
-`GET /dashboard` returns one document with session identity, subscription status, gate state (including who currently holds the key and the ordered waiters), throughput, latency quantiles, an error breakdown by category, upstream status, per-client activity, and recent requests. Its field names are pinned by `src/inference_provider_proxy/contracts/dashboard.schema.json`.
+The HTML UI is one shell with a left sidebar and one route per category: `/` is the overview (session identity, subscription, KPI cards, gate counters, latency), and `/live`, `/requests`, `/errors`, `/clients`, `/upstream` each show one category on their own page. It is plain HTML + CSS — no client-side script — and collapses the sidebar into a CSS-only drawer below `56.25em`.
+
+`GET /dashboard` returns one document with session identity, subscription status, gate state (including who currently holds the key and the ordered waiters), throughput, latency quantiles, an error breakdown by category, upstream status, per-client activity, and recent requests. Its field names are pinned by `src/inference_provider_proxy/contracts/dashboard.schema.json`. Every HTML page renders this same document.
 
 The field to watch is `errors.by_kind.provider_busy`. It counts provider 429s after the retry budget; non-zero does **not** mean the gate failed: every `errors.recent[]` entry carries the `gate_in_flight` / `gate_capacity` recorded with it, and `in_flight <= capacity` there means another consumer is sharing the key.
 
