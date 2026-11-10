@@ -99,8 +99,21 @@ jobs:
       - name: Bump pyproject and tag the commit
         env:
           RELEASE_TAG: ${{ steps.target.outputs.tag }}
+          GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
+          mkdir -p "$HOME/.gnupg" && chmod 700 "$HOME/.gnupg"
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          printf '%s' "$GPG_PASSPHRASE" > "$HOME/.gpg-pass"
+          chmod 600 "$HOME/.gpg-pass"
+          printf '#!/usr/bin/env bash\nexec gpg --batch --pinentry-mode loopback --passphrase-file "$HOME/.gpg-pass" "$@"\n' > "$HOME/.gpg-wrapper"
+          chmod 700 "$HOME/.gpg-wrapper"
+          git config gpg.format openpgp
+          git config gpg.program "$HOME/.gpg-wrapper"
+          git config user.signingkey "3451B40916BACDA5A85D68840D73536ACF8485D4"
+          git config commit.gpgsign true
+          git config tag.gpgsign true
           git config user.name "JFortun"
           git config user.email "josemanuelfortunromero@gmail.com"
           version="${RELEASE_TAG#v}"
@@ -111,10 +124,12 @@ jobs:
           if [ "$(uv version --short)" != "$version" ]; then
             uv version "$version"
             git add pyproject.toml uv.lock
-            git commit -m "chore(release): bump version to ${version}"
+            git commit -S -m "chore(release): bump version to ${version}"
+            git verify-commit HEAD
             git push origin HEAD:main
           fi
-          git tag -a "${RELEASE_TAG}" -m "${RELEASE_TAG}"
+          git tag -s "${RELEASE_TAG}" -m "${RELEASE_TAG}"
+          git verify-tag "${RELEASE_TAG}"
           git push origin "${RELEASE_TAG}"
           echo "tagged ${RELEASE_TAG} on $(git rev-parse --short HEAD)"
 
@@ -169,7 +184,7 @@ jobs:
 
   deploy:
     name: Deploy
-    needs: attach-distributions
+    needs: [attach-distributions, bump]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency: deploy
