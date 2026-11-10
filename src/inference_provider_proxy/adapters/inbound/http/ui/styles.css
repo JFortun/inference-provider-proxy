@@ -31,15 +31,19 @@ main {
     grid-area: main;
     display: grid;
     gap: 1rem;
+    width: 100%;
     max-width: 100rem;
+    /* centered, not stretched: with a definite width the clamp to max-width
+       leaves slack on both sides instead of all of it on the right */
+    justify-self: center;
     padding: clamp(0.75rem, 3vw, 1.5rem);
 }
 .top {
     grid-area: top;
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    /* equal outer tracks keep the middle one — the metadata — dead center */
+    grid-template-columns: 1fr auto 1fr;
     gap: 0.5rem 1.25rem;
-    justify-content: space-between;
     padding: 0.75rem clamp(0.75rem, 3vw, 1.5rem);
     border-bottom: 1px solid var(--ghost);
 }
@@ -95,7 +99,10 @@ main {
             "main";
     }
     .top {
-        justify-content: flex-start;
+        grid-template-columns: auto 1fr;
+    }
+    .topmeta {
+        grid-column: 1 / -1;
     }
     .nav-toggle {
         display: block;
@@ -131,16 +138,10 @@ main {
 }
 
 /* auto-fit does the card-level responsive work within a page */
-.kpis,
-.grid2 {
+.kpis {
     display: grid;
     gap: 1rem;
-}
-.kpis {
     grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
-}
-.grid2 {
-    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
 }
 
 .card {
