@@ -56,31 +56,30 @@ def _handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(404, json={"error": "not found"})
 
 
-async def test_index_renders_the_zero_traffic_overview(asgi_client_factory) -> None:
+async def test_index_when_fetched_then_renders_the_zero_traffic_overview(
+    asgi_client_factory,
+) -> None:
     harness = build_harness(_handler)
     client = asgi_client_factory(harness.app)
 
     response = await client.get("/")
+    body = response.text
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    body = response.text
-    # Formatter-agnostic: the on-disk HTML is normalized on save.
     assert 'http-equiv="refresh"' in body and 'content="5"' in body
     assert 'rel="stylesheet"' in body and 'href="/styles.css"' in body
     assert 'href="/dashboard"' in body
     assert "<script" not in body.lower()
-    # Everything substituted; nothing left as a raw placeholder.
     assert "$" not in body
     assert "generated" in body and "uptime" in body
-    # Empty states rather than raw nulls or missing sections.
     assert "null" not in body
     assert ">None<" not in body
     assert 'href="/" aria-current="page"' in body
 
 
 @pytest.mark.parametrize("page,route", list(ROUTES.items()))
-async def test_every_section_page_is_isolated_and_marks_itself_active(
+async def test_section_page_when_visited_then_is_isolated_and_marks_itself_active(
     asgi_client_factory, page: str, route: str
 ) -> None:
     harness = build_harness(_handler)
@@ -107,20 +106,20 @@ async def test_every_section_page_is_isolated_and_marks_itself_active(
         assert marker not in body, f"{route} leaked {marker!r}"
 
 
-async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
+async def test_styles_css_when_served_then_carries_the_layout_rules(
+    asgi_client_factory,
+) -> None:
     harness = build_harness(_handler)
     client = asgi_client_factory(harness.app)
 
     response = await client.get("/styles.css")
+    text = response.text
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/css")
-    text = response.text
     assert ".pill--bad" in text
-    # Empty rows are hidden by CSS so the notes in the page templates take over.
     assert "table:has(tbody:empty)" in text
     assert "+ .empty" in text
-    # Bounded viewport with headers that stay put while it scrolls.
     assert "max-height" in text
     assert "position: sticky" in text
     assert ".note:empty" in text
@@ -132,26 +131,21 @@ async def test_styles_css_is_served_separately(asgi_client_factory) -> None:
     assert ".nav-toggle" in text
     assert "@media (max-width: 56.25em)" in text
     assert ".nav-toggle:checked ~ .sidebar" in text
-    # review bugs: the 100vh grid-item sidebar inflated the header row, auto margins shrank main
     assert "position: fixed" in text
     assert "margin: auto" not in text
-    # no px font sizes: they ignore the browser's font-size setting
     assert "font: 0.8125rem/1.5" in text
     assert "13px" not in text
-    # equal outer tracks keep the header meta dead center; main centers in its
-    # column instead of hugging the sidebar; the live page is one column (#17)
     assert "grid-template-columns: 1fr auto 1fr" in text
     assert "justify-self: center" in text
     assert ".grid2" not in text
 
 
-async def test_populated_document_renders_every_page_and_escapes(
+async def test_populated_document_when_rendered_then_escapes_every_page(
     asgi_client_factory,
 ) -> None:
     harness = build_harness(_handler)
     client = asgi_client_factory(harness.app)
     document = (await client.get("/dashboard")).json()
-
     document["gate"].update(
         {
             "capacity": 2,
@@ -271,29 +265,22 @@ async def test_populated_document_renders_every_page_and_escapes(
     assert "&lt;script&gt;" in body
     assert "&lt;b&gt;model&lt;/b&gt;" in body
     assert "$" not in body
-    assert "pill--bad" in body  # provider_busy 2 and status 502
-    # The busy pill explains itself when non-zero.
+    assert "pill--bad" in body
     assert 'title="Provider 429s of requests admitted within capacity' in body
-    assert "2m 05s" in body  # oldest queue wait, minute branch
-    assert "4.2 s" in body  # duration above one second
+    assert "2m 05s" in body
+    assert "4.2 s" in body
     assert "stream" in body and "aborted" in body
-    # Rows rendered: queue waiter, holder, episodes, requests, clients, models.
     assert "req-2" in body
-    assert "<script>alert(1)</script>" not in body  # request_id, escaped
-    assert "upstream_5xx" in body  # episode row kind pill
-    # Gate column on every episode: within capacity is neutral, over capacity (the
-    # only true gate fault) is bad, and the column explains itself on the page.
+    assert "<script>alert(1)</script>" not in body
+    assert "upstream_5xx" in body
     assert ">1/2<" in body
     assert ">3/1<" in body
     assert "in-flight / capacity" in body
     assert "curl/8.5" in body
-    # The clients bar sits in its own labelled column: as a bare <td class="bar">
-    # the cell lost its table sizing and collapsed to its padding (issue #5).
     assert '<th class="share">Share</th>' in body
     assert '<td class="share"><span class="bar"><i style="width: 100%">' in body
     assert "128k" in body
     assert 'class="card card--fill"' in body
-    # Under the render cap: no truncation footnote.
     assert '<p class="note"></p>' in body
     assert "showing" not in body
 
@@ -331,27 +318,27 @@ def _episode_row_source(i: int) -> dict[str, object]:
     }
 
 
-async def test_tables_render_100_rows_newest_first_then_footnote(
+async def test_tables_when_over_the_cap_then_render_100_rows_newest_first(
     asgi_client_factory,
 ) -> None:
     harness = build_harness(_handler)
     client = asgi_client_factory(harness.app)
     document = (await client.get("/dashboard")).json()
-
-    # Newest first, as the contract promises: 0 is the newest row.
     document["recent_requests"] = [_request_row_source(i) for i in range(150)]
     document["errors"]["recent"] = [_episode_row_source(i) for i in range(120)]
 
     body = render_page("requests", document) + render_page("errors", document)
 
     assert "host-0" in body and "host-99" in body
-    assert "host-100" not in body and "host-149" not in body  # dropped
-    assert "ep-99" in body and "ep-119" not in body  # dropped
+    assert "host-100" not in body and "host-149" not in body
+    assert "ep-99" in body and "ep-119" not in body
     assert body.count("showing 100 of 150") == 1
     assert body.count("showing 100 of 120") == 1
 
 
-async def test_styles_css_stretches_cards_to_their_row(asgi_client_factory) -> None:
+async def test_styles_css_when_rendered_then_stretches_cards_to_their_row(
+    asgi_client_factory,
+) -> None:
     harness = build_harness(_handler)
     client = asgi_client_factory(harness.app)
 

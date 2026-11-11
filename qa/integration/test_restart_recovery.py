@@ -12,29 +12,27 @@ import time
 import httpx
 import pytest
 
+from inference_provider_proxy.config import get_settings
 from inference_provider_proxy.main import build_app
 
 
 @pytest.fixture
 def clean_env(monkeypatch: pytest.MonkeyPatch):
-    # Deterministic settings: no .env, no inherited IPP_* surprises.
     monkeypatch.setenv("IPP_UPSTREAM_API_KEY", "test-key")
     monkeypatch.setenv("IPP_BIND_PORT", "13306")
     yield
 
 
-async def test_service_resumes_without_operator_action(clean_env) -> None:
-    from inference_provider_proxy.config import get_settings
-
+async def test_service_when_restarted_without_operator_action_then_resumes_serving(
+    clean_env,
+) -> None:
     get_settings.cache_clear()
-
     first = build_app()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=first), base_url="http://proxy.local"
     ) as client:
         assert (await client.get("/healthz")).status_code == 200
 
-    # Simulate an unexpected exit: nothing is persisted, nothing is cleaned up.
     started = time.monotonic()
     second = build_app()
     async with httpx.AsyncClient(
@@ -43,11 +41,9 @@ async def test_service_resumes_without_operator_action(clean_env) -> None:
         assert (await client.get("/healthz")).status_code == 200
         document = (await client.get("/dashboard")).json()
     elapsed = time.monotonic() - started
+    get_settings.cache_clear()
 
-    assert elapsed < 10.0, "the service must resume serving within 10 seconds"
-    # Session counters restart from zero: an interrupted request is not
-    # carried over and cannot be reported as successful afterwards.
+    assert elapsed < 10.0
     assert document["throughput"]["requests_total"] == 0
     assert document["gate"]["in_flight"] == 0
     assert document["gate"]["queued"] == 0
-    get_settings.cache_clear()

@@ -29,7 +29,9 @@ def _handler(seen: dict[str, str]):
     return handler
 
 
-async def test_key_is_substituted_outbound_but_never_returned(asgi_client_factory, caplog) -> None:
+async def test_key_when_substituted_outbound_then_never_returned_to_the_client(
+    asgi_client_factory, caplog
+) -> None:
     seen: dict[str, str] = {}
     harness = build_harness(_handler(seen), upstream_api_key=KEY)
     client = asgi_client_factory(harness.app)
@@ -42,23 +44,19 @@ async def test_key_is_substituted_outbound_but_never_returned(asgi_client_factor
         dashboard = await client.get("/dashboard")
 
     assert response.status_code == 200
-
-    # Substituted server-side on the outbound call.
     assert seen["authorization"] == f"Bearer {KEY}"
     assert seen["user_agent"] == harness.settings.user_agent
-
-    # Absent from every client-facing surface.
     assert KEY not in response.text
     assert KEY not in dashboard.text
     for name, value in response.headers.items():
         assert KEY not in f"{name}: {value}"
-
-    # Absent from logs.
     assert KEY not in caplog.text
     assert "Bearer" not in caplog.text
 
 
-async def test_client_supplied_credential_is_ignored(asgi_client_factory) -> None:
+async def test_client_credential_when_supplied_then_is_ignored_upstream(
+    asgi_client_factory,
+) -> None:
     seen: dict[str, str] = {}
     harness = build_harness(_handler(seen), upstream_api_key=KEY)
     client = asgi_client_factory(harness.app)
@@ -69,6 +67,5 @@ async def test_client_supplied_credential_is_ignored(asgi_client_factory) -> Non
         headers={"Authorization": "Bearer client-supplied-nonsense"},
     )
 
-    # The client's own credential is never forwarded upstream.
     assert seen["authorization"] == f"Bearer {KEY}"
     assert "client-supplied-nonsense" not in seen["authorization"]

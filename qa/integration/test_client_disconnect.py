@@ -33,10 +33,13 @@ async def _wait_until(predicate: Any, budget: float = 5.0) -> None:
         await asyncio.sleep(0.02)
 
 
+def _payload(stream: bool) -> bytes:
+    return json.dumps({**_BODY, "stream": stream}).encode()
+
+
 async def _start(
     harness: Any, *, stream: bool
 ) -> tuple[asyncio.Task[Any], asyncio.Event, list[dict[str, Any]]]:
-    """Run the ASGI app with a receive channel the test controls."""
     sent: list[dict[str, Any]] = []
     body_sent = False
     disconnect = asyncio.Event()
@@ -73,10 +76,6 @@ async def _start(
     return asyncio.create_task(harness.app(scope, receive, send)), disconnect, sent
 
 
-def _payload(stream: bool) -> bytes:
-    return json.dumps({**_BODY, "stream": stream}).encode()
-
-
 def _chat_request(request_id: str, *, stream: bool) -> ChatRequest:
     return ChatRequest(
         request_id=request_id,
@@ -87,16 +86,78 @@ def _chat_request(request_id: str, *, stream: bool) -> ChatRequest:
     )
 
 
-async def test_queued_client_disconnect_frees_the_queue_and_is_recorded(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    calls = {"n": 0}
-
+def _counting_handler(calls: dict[str, int]):
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
         return httpx.Response(200, json={"id": "c1", "choices": []})
 
-    harness = build_harness(handler)
+    return handler
+
+
+class _SlowBody(httpx.AsyncByteStream):
+    async def __aiter__(self):
+        await asyncio.sleep(30)
+        yield b'{"id":"c1","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}'
+
+
+def _slow_then_ok_handler(state: dict[str, bool]):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if state["slow"]:
+            return httpx.Response(
+                200, headers={"content-type": "application/json"}, stream=_SlowBody()
+            )
+        return httpx.Response(200, json={"id": "c1", "choices": []})
+
+    return handler
+
+
+class _BlockingStream:
+    status_code = 200
+    headers: dict[str, str] = {}
+    provider_id: str | None = None
+    provider_correlation_id: str | None = None
+    usage = None
+
+    def __init__(self) -> None:
+        self.opened = asyncio.Event()
+
+    async def __aenter__(self) -> _BlockingStream:
+        self.opened.set()
+        await asyncio.sleep(30)
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    async def aiter_bytes(self):  # pragma: no cover - never iterated
+        yield b""
+
+
+class _BlockingProvider:
+    def __init__(self) -> None:
+        self.stream = _BlockingStream()
+
+    async def complete(self, body: Any) -> Any:  # pragma: no cover - unused
+        raise AssertionError("complete() is not used here")
+
+    def open_stream(self, body: Any) -> _BlockingStream:
+        return self.stream
+
+    async def list_models(self) -> list[Any]:
+        return []
+
+    async def fetch_usage(self) -> SubscriptionInfo:
+        return SubscriptionInfo()
+
+    async def aclose(self) -> None:
+        return None
+
+
+async def test_queued_client_when_it_disconnects_then_frees_the_queue_and_is_recorded(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    calls = {"n": 0}
+    harness = build_harness(_counting_handler(calls))
     holder = harness.gate.slot(
         request_id="hold",
         client=ClientIdentity(address="10.0.0.1"),
@@ -105,158 +166,108 @@ async def test_queued_client_disconnect_frees_the_queue_and_is_recorded(
         max_wait_s=5.0,
     )
     await holder.__aenter__()
-    try:
-        with caplog.at_level(logging.WARNING, logger="ipp.chat"):
-            task, disconnect, sent = await _start(harness, stream=True)
-            await _wait_until(lambda: harness.gate.snapshot().queued == 1)
-            disconnect.set()
-            await asyncio.wait_for(task, 5)
 
-        snapshot = harness.gate.snapshot()
-        assert snapshot.cancelled_while_waiting_total == 1  # observed over real ASGI
-        assert snapshot.queued == 0  # the place is given back at once
-        assert snapshot.in_flight == 1  # only the holder remains
-        assert calls["n"] == 0  # a dead client never reaches the provider
+    with caplog.at_level(logging.WARNING, logger="ipp.chat"):
+        task, disconnect, sent = await _start(harness, stream=True)
+        await _wait_until(lambda: harness.gate.snapshot().queued == 1)
+        disconnect.set()
+        await asyncio.wait_for(task, 5)
+    snapshot = harness.gate.snapshot()
+    await holder.__aexit__(None, None, None)
 
-        assert sent[0]["type"] == "http.response.start"
-        assert sent[0]["status"] == 499  # answered in the dialect
-        metrics = harness.metrics
-        assert metrics.errors().by_kind[ErrorKind.CLIENT_ABORTED.value] == 1
-        throughput = metrics.throughput()
-        assert throughput.requests_aborted == 1
-        assert throughput.requests_completed == 0
-        rows = metrics.clients()  # the two sections label the abort alike
-        assert sum(row.failed for row in rows) == throughput.requests_failed
-        assert sum(row.aborted for row in rows) == throughput.requests_aborted
-        record = metrics.recent_requests()[0]
-        assert (record.status, record.aborted, record.streaming) == (499, True, True)
-        assert "client disconnected while queued" in caplog.text
-    finally:
-        await holder.__aexit__(None, None, None)
+    assert snapshot.cancelled_while_waiting_total == 1
+    assert snapshot.queued == 0
+    assert snapshot.in_flight == 1
+    assert calls["n"] == 0
+    assert sent[0]["type"] == "http.response.start"
+    assert sent[0]["status"] == 499
+    metrics = harness.metrics
+    assert metrics.errors().by_kind[ErrorKind.CLIENT_ABORTED.value] == 1
+    throughput = metrics.throughput()
+    assert throughput.requests_aborted == 1
+    assert throughput.requests_completed == 0
+    rows = metrics.clients()
+    assert sum(row.failed for row in rows) == throughput.requests_failed
+    assert sum(row.aborted for row in rows) == throughput.requests_aborted
+    record = metrics.recent_requests()[0]
+    assert (record.status, record.aborted, record.streaming) == (499, True, True)
+    assert "client disconnected while queued" in caplog.text
 
 
-async def test_disconnect_during_the_provider_call_aborts_it_and_frees_the_slot(
+async def test_disconnect_during_the_provider_call_when_it_frees_the_slot_then_records_abort(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    class _SlowBody(httpx.AsyncByteStream):
-        async def __aiter__(self):
-            await asyncio.sleep(30)
-            yield b'{"id":"c1","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}'
-
     state = {"slow": True}
+    harness = build_harness(_slow_then_ok_handler(state))
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        if state["slow"]:
-            return httpx.Response(
-                200, headers={"content-type": "application/json"}, stream=_SlowBody()
-            )
-        return httpx.Response(200, json={"id": "c1", "choices": []})
-
-    harness = build_harness(handler)
     with caplog.at_level(logging.WARNING, logger="ipp.chat"):
         task, disconnect, sent = await _start(harness, stream=False)
         await _wait_until(lambda: harness.gate.snapshot().in_flight == 1)
-        await asyncio.sleep(0.35)  # at least one watcher poll while in flight
-
+        await asyncio.sleep(0.35)
         started = time.monotonic()
         disconnect.set()
         await asyncio.wait_for(task, 5)
         elapsed = time.monotonic() - started
-
-    assert elapsed < 3.0  # did not wait out the 30s provider call
     snapshot = harness.gate.snapshot()
-    assert snapshot.in_flight == 0  # slot released without finishing the call
-    assert snapshot.queued == 0
-
-    assert sent[0]["status"] == 499
     metrics = harness.metrics
+    record = metrics.recent_requests()[0]
+
+    assert elapsed < 3.0
+    assert snapshot.in_flight == 0
+    assert snapshot.queued == 0
+    assert sent[0]["status"] == 499
+    assert (record.status, record.aborted) == (499, True)
     assert metrics.errors().by_kind[ErrorKind.CLIENT_ABORTED.value] == 1
     assert metrics.throughput().requests_aborted == 1
-    assert metrics.throughput().requests_completed == 0  # never a ghost 200
-    record = metrics.recent_requests()[0]
-    assert (record.status, record.aborted) == (499, True)
+    assert metrics.throughput().requests_completed == 0
     assert "client disconnected while in flight" in caplog.text
 
+
+async def test_slot_when_freed_by_a_disconnect_then_serves_the_next_client() -> None:
+    state = {"slow": True}
+    harness = build_harness(_slow_then_ok_handler(state))
+    task, disconnect, _ = await _start(harness, stream=False)
+    await _wait_until(lambda: harness.gate.snapshot().in_flight == 1)
+    disconnect.set()
+    await asyncio.wait_for(task, 5)
     state["slow"] = False
-    follow_up = await harness.chat.complete(
-        ChatRequest(
-            request_id="next",
-            client=ClientIdentity(address="10.0.0.7"),
-            model="m",
-            stream=False,
-            body=_BODY,
-        )
-    )
-    assert follow_up.status_code == 200  # the freed slot serves the next client
+
+    follow_up = await harness.chat.complete(_chat_request("next", stream=False))
+
+    assert harness.gate.snapshot().in_flight == 0
+    assert follow_up.status_code == 200
 
 
-async def test_cancellation_from_outside_is_not_turned_into_an_abort() -> None:
-    """Only a gone client becomes 499; a shutdown cancel must pass through."""
-
-    finished = asyncio.Event()
-
-    async def slow() -> None:
-        try:
-            await asyncio.sleep(30)
-        finally:
-            finished.set()
-
-    async def receive() -> dict[str, Any]:
+async def _stalled_call(finished: asyncio.Event) -> None:
+    try:
         await asyncio.sleep(30)
-        return {"type": "http.disconnect"}
+    finally:
+        finished.set()
 
+
+async def _late_disconnect_receive() -> dict[str, Any]:
+    await asyncio.sleep(30)
+    return {"type": "http.disconnect"}
+
+
+async def test_cancellation_from_outside_when_raised_then_is_not_turned_into_an_abort() -> None:
+    finished = asyncio.Event()
     scope = {"type": "http", "headers": [], "method": "POST", "path": "/", "query_string": b""}
-    task = asyncio.create_task(_await_pre_response(Request(scope, receive), slow()))
-    await asyncio.sleep(0.05)  # let the watcher poll at least once
+
+    task = asyncio.create_task(
+        _await_pre_response(Request(scope, _late_disconnect_receive), _stalled_call(finished))
+    )
+    await asyncio.sleep(0.05)
     task.cancel()
+
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert finished.is_set()  # the inner call was stopped, not left running
+    assert finished.is_set()
 
 
-async def test_cancelling_the_stream_open_records_the_abort_and_frees_the_slot(
+async def test_stream_open_when_cancelled_then_records_the_abort_and_frees_the_slot(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    class _BlockingStream:
-        status_code = 200
-        headers: dict[str, str] = {}
-        provider_id: str | None = None
-        provider_correlation_id: str | None = None
-        usage = None
-
-        def __init__(self) -> None:
-            self.opened = asyncio.Event()
-
-        async def __aenter__(self) -> _BlockingStream:
-            self.opened.set()
-            await asyncio.sleep(30)
-            return self
-
-        async def __aexit__(self, *exc: object) -> bool:
-            return False
-
-        async def aiter_bytes(self):  # pragma: no cover - never iterated
-            yield b""
-
-    class _BlockingProvider:
-        def __init__(self) -> None:
-            self.stream = _BlockingStream()
-
-        async def complete(self, body: Any) -> Any:  # pragma: no cover - unused
-            raise AssertionError("complete() is not used here")
-
-        def open_stream(self, body: Any) -> _BlockingStream:
-            return self.stream
-
-        async def list_models(self) -> list[Any]:
-            return []
-
-        async def fetch_usage(self) -> SubscriptionInfo:
-            return SubscriptionInfo()
-
-        async def aclose(self) -> None:
-            return None
-
     harness = build_harness(lambda request: httpx.Response(200, json={"data": []}))
     provider = _BlockingProvider()
     chat = ChatService(
@@ -270,12 +281,14 @@ async def test_cancelling_the_stream_open_records_the_abort_and_frees_the_slot(
     with caplog.at_level(logging.WARNING, logger="ipp.chat"):
         task = asyncio.create_task(chat.stream(_chat_request("r1", stream=True)))
         await asyncio.wait_for(provider.stream.opened.wait(), 5)
-        assert harness.gate.snapshot().in_flight == 1  # admitted, now opening
+        held = harness.gate.snapshot().in_flight
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, 5)
+    released = harness.gate.snapshot()
 
-    assert harness.gate.snapshot().in_flight == 0
+    assert held == 1
+    assert released.in_flight == 0
     metrics = harness.metrics
     assert metrics.errors().by_kind[ErrorKind.CLIENT_ABORTED.value] == 1
     throughput = metrics.throughput()

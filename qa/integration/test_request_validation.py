@@ -11,7 +11,7 @@ def _unused_handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"id": "c1", "choices": []})
 
 
-async def test_non_json_body_is_a_classified_400(asgi_client_factory) -> None:
+async def test_non_json_body_when_posted_then_is_a_classified_400(asgi_client_factory) -> None:
     harness = build_harness(_unused_handler)
     client = asgi_client_factory(harness.app)
 
@@ -25,7 +25,7 @@ async def test_non_json_body_is_a_classified_400(asgi_client_factory) -> None:
     assert response.json()["error"]["code"] == "invalid_request_error"
 
 
-async def test_json_that_is_not_an_object_is_a_classified_400(asgi_client_factory) -> None:
+async def test_json_array_when_posted_then_is_a_classified_400(asgi_client_factory) -> None:
     harness = build_harness(_unused_handler)
     client = asgi_client_factory(harness.app)
 

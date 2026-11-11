@@ -37,7 +37,27 @@ def _provider(handler, *, idle_s: float = 10.0) -> CheapestInferenceProvider:
     )
 
 
-async def test_stalled_stream_is_cut_off_as_unreachable() -> None:
+def _connect_error(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("refused")
+
+
+def _html_response(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, content=b"<html>nope</html>")
+
+
+def _server_error(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(500, json={"error": {"message": "boom", "type": "internal"}})
+
+
+def _completion_without_usage(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, json={"id": "c1", "choices": []})
+
+
+def _array_usage(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, content=b"[1, 2, 3]")
+
+
+async def test_stalled_stream_when_idle_timeout_hits_then_is_cut_off_as_unreachable() -> None:
     stream = _OpenStream(_StallingResponse(), idle_timeout_s=0.01)
 
     with pytest.raises(ProxyError) as excinfo:
@@ -48,15 +68,15 @@ async def test_stalled_stream_is_cut_off_as_unreachable() -> None:
     assert excinfo.value.retryable is True
 
 
-def test_oversized_partial_line_is_trimmed() -> None:
+def test_partial_line_when_oversized_without_newline_then_is_trimmed_to_bound() -> None:
     stream = _OpenStream(_StallingResponse(), idle_timeout_s=1.0)
 
-    stream._scan(b"x" * 70000)  # no newline, so nothing is parsed and the buffer must stay bounded
+    stream._scan(b"x" * 70000)
 
     assert len(stream._buffer) == 4096
 
 
-def test_non_json_and_non_object_payloads_are_ignored() -> None:
+def test_non_object_payloads_when_scanned_then_are_ignored() -> None:
     stream = _OpenStream(_StallingResponse(), idle_timeout_s=1.0)
 
     stream._scan(b"data: not-json\n")
@@ -66,92 +86,85 @@ def test_non_json_and_non_object_payloads_are_ignored() -> None:
     assert stream.usage is None
 
 
-async def test_stream_transport_error_is_classified_as_unreachable() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("refused")
+async def test_stream_transport_error_when_connect_fails_then_is_unreachable() -> None:
+    provider = _provider(_connect_error)
 
-    provider = _provider(handler)
-    try:
-        with pytest.raises(ProxyError) as excinfo:
-            async with provider.open_stream({"model": "m", "messages": []}) as stream:
-                async for _ in stream.aiter_bytes():
-                    pass
-    finally:
-        await provider.aclose()
+    with pytest.raises(ProxyError) as excinfo:
+        async with provider.open_stream({"model": "m", "messages": []}) as stream:
+            async for _ in stream.aiter_bytes():
+                pass
+    await provider.aclose()
 
     assert excinfo.value.kind is ErrorKind.UPSTREAM_UNREACHABLE
 
 
-async def test_catalogue_body_that_is_not_json_yields_no_models() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=b"<html>nope</html>")
+async def test_catalogue_when_body_is_not_json_then_yields_no_models() -> None:
+    provider = _provider(_html_response)
 
-    provider = _provider(handler)
-    try:
-        assert await provider.list_models() == []
-    finally:
-        await provider.aclose()
+    models = await provider.list_models()
+    await provider.aclose()
+
+    assert models == []
 
 
-async def test_catalogue_error_status_is_classified() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(500, json={"error": {"message": "boom", "type": "internal"}})
+async def test_catalogue_when_status_is_an_error_then_is_classified() -> None:
+    provider = _provider(_server_error)
 
-    provider = _provider(handler)
-    try:
-        with pytest.raises(ProxyError) as excinfo:
-            await provider.list_models()
-    finally:
-        await provider.aclose()
+    with pytest.raises(ProxyError) as excinfo:
+        await provider.list_models()
+    await provider.aclose()
 
     assert excinfo.value.kind is ErrorKind.UPSTREAM_5XX
 
 
-async def test_completion_without_a_usage_block_has_none() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"id": "c1", "choices": []})
+async def test_completion_when_usage_block_is_absent_then_has_none() -> None:
+    provider = _provider(_completion_without_usage)
 
-    provider = _provider(handler)
-    try:
-        completion = await provider.complete({"model": "m", "messages": []})
-    finally:
-        await provider.aclose()
+    completion = await provider.complete({"model": "m", "messages": []})
+    await provider.aclose()
 
     assert completion.provider_id == "c1"
     assert completion.usage is None
 
 
-async def test_usage_body_that_is_json_but_not_an_object_is_stale() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=b"[1, 2, 3]")
+async def test_usage_when_body_is_json_array_then_is_marked_stale() -> None:
+    provider = _provider(_array_usage)
 
-    provider = _provider(handler)
-    try:
-        info = await provider.fetch_usage()
-    finally:
-        await provider.aclose()
+    info = await provider.fetch_usage()
+    await provider.aclose()
 
     assert info.stale is True
 
 
-def test_retry_after_unparseable_value_is_none() -> None:
-    assert CheapestInferenceProvider._retry_after({"retry-after": "not-a-date"}) is None
+def test_retry_after_when_value_is_unparseable_then_is_none() -> None:
+    headers = {"retry-after": "not-a-date"}
+
+    value = CheapestInferenceProvider._retry_after(headers)
+
+    assert value is None
 
 
-def test_retry_after_accepts_a_naive_http_date() -> None:
-    value = CheapestInferenceProvider._retry_after({"retry-after": "Wed, 21 Oct 2099 07:28:00"})
+def test_retry_after_when_value_is_naive_http_date_then_is_positive() -> None:
+    headers = {"retry-after": "Wed, 21 Oct 2099 07:28:00"}
+
+    value = CheapestInferenceProvider._retry_after(headers)
 
     assert value is not None
     assert value > 0
 
 
-def test_parse_timestamp_handles_non_strings_and_bad_values() -> None:
-    assert _parse_timestamp(123) is None
-    assert _parse_timestamp("not-a-date") is None
+def test_parse_timestamp_when_not_a_string_or_invalid_then_is_none() -> None:
+    raw_values: list[object] = [123, "not-a-date"]
+
+    parsed = [_parse_timestamp(value) for value in raw_values]
+
+    assert parsed == [None, None]
 
 
-def test_parse_timestamp_assumes_utc_for_naive_values() -> None:
-    parsed = _parse_timestamp("2026-12-31T00:00:00")
+def test_parse_timestamp_when_naive_then_assumes_utc() -> None:
+    raw = "2026-12-31T00:00:00"
+
+    parsed = _parse_timestamp(raw)
 
     assert parsed is not None
     assert parsed.tzinfo is not None

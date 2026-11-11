@@ -38,21 +38,38 @@ def _provider(handler) -> CheapestInferenceProvider:
     )
 
 
-@pytest.mark.parametrize("name,status,headers,kind,code,retryable", CASES)
-async def test_each_row_of_the_mapping_table(name, status, headers, kind, code, retryable) -> None:
-    body = (FIXTURES / name).read_bytes()
+def _status_handler(status: int, headers: dict | None = None, body: bytes | None = None):
+    payload = body if body is not None else b""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(status, headers=headers, content=body)
+        return httpx.Response(status, headers=headers or {}, content=payload)
 
+    return handler
+
+
+def _error_body(name: str) -> bytes:
+    return (FIXTURES / name).read_bytes()
+
+
+async def _classify(handler) -> ProxyError:
     provider = _provider(handler)
     try:
         with pytest.raises(ProxyError) as excinfo:
             await provider.complete({"model": "m", "messages": []})
     finally:
         await provider.aclose()
+    return excinfo.value
 
-    error = excinfo.value
+
+@pytest.mark.parametrize("name,status,headers,kind,code,retryable", CASES)
+async def test_each_row_of_the_mapping_table_when_classified_then_matches_the_contract(
+    name, status, headers, kind, code, retryable
+) -> None:
+    body = _error_body(name)
+    handler = _status_handler(status, headers, body)
+
+    error = await _classify(handler)
+
     assert error.kind is kind
     assert error.code == code
     assert isinstance(error.code, str)
@@ -60,63 +77,41 @@ async def test_each_row_of_the_mapping_table(name, status, headers, kind, code, 
     assert error.retryable is retryable
 
 
-async def test_provider_busy_honours_retry_after_header() -> None:
-    body = (FIXTURES / "throttling_429.json").read_bytes()
+async def test_provider_busy_when_retry_after_is_sent_then_honours_it() -> None:
+    body = _error_body("throttling_429.json")
+    handler = _status_handler(429, {"retry-after": "7"}, body)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(429, headers={"retry-after": "7"}, content=body)
+    error = await _classify(handler)
 
-    provider = _provider(handler)
-    try:
-        with pytest.raises(ProxyError) as excinfo:
-            await provider.complete({"model": "m", "messages": []})
-    finally:
-        await provider.aclose()
-    assert excinfo.value.retry_after_s == 7.0
+    assert error.retry_after_s == 7.0
 
 
-async def test_edge_block_is_never_reported_as_auth() -> None:
-    body = (FIXTURES / "edge_block_403.txt").read_bytes()
+async def test_edge_block_when_returned_then_is_never_reported_as_auth() -> None:
+    body = _error_body("edge_block_403.txt")
+    handler = _status_handler(403, body=body)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(403, content=body)
+    error = await _classify(handler)
 
-    provider = _provider(handler)
-    try:
-        with pytest.raises(ProxyError) as excinfo:
-            await provider.complete({"model": "m", "messages": []})
-    finally:
-        await provider.aclose()
-    assert excinfo.value.kind is ErrorKind.EDGE_BLOCK
-    assert excinfo.value.kind is not ErrorKind.UPSTREAM_AUTH
-    assert excinfo.value.code == "upstream_edge_blocked"
+    assert error.kind is ErrorKind.EDGE_BLOCK
+    assert error.kind is not ErrorKind.UPSTREAM_AUTH
+    assert error.code == "upstream_edge_blocked"
 
 
-async def test_unrecognised_shape_is_passed_through_not_rewritten() -> None:
-    body = (FIXTURES / "unknown_418.json").read_bytes()
+async def test_unrecognised_status_when_returned_then_is_passed_through_not_rewritten() -> None:
+    body = _error_body("unknown_418.json")
+    handler = _status_handler(418, body=body)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(418, content=body)
+    error = await _classify(handler)
 
-    provider = _provider(handler)
-    try:
-        with pytest.raises(ProxyError) as excinfo:
-            await provider.complete({"model": "m", "messages": []})
-    finally:
-        await provider.aclose()
-    assert excinfo.value.kind is ErrorKind.UNKNOWN
-    assert excinfo.value.provider_body == body
+    assert error.kind is ErrorKind.UNKNOWN
+    assert error.provider_body == body
 
 
-async def test_transport_error_is_unreachable_and_retryable() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
+async def test_transport_error_when_connect_fails_then_is_unreachable_and_retryable() -> None:
+    def refuse(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
-    provider = _provider(handler)
-    try:
-        with pytest.raises(ProxyError) as excinfo:
-            await provider.complete({"model": "m", "messages": []})
-    finally:
-        await provider.aclose()
-    assert excinfo.value.kind is ErrorKind.UPSTREAM_UNREACHABLE
-    assert excinfo.value.retryable is True
+    error = await _classify(refuse)
+
+    assert error.kind is ErrorKind.UPSTREAM_UNREACHABLE
+    assert error.retryable is True

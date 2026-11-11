@@ -14,7 +14,7 @@ from inference_provider_proxy.adapters.outbound.metrics.memory import MemoryMetr
 from inference_provider_proxy.application.ports.clock import SystemClock
 from inference_provider_proxy.application.services.chat import ChatService
 from inference_provider_proxy.config import Settings
-from inference_provider_proxy.domain.errors import ErrorKind
+from inference_provider_proxy.domain.errors import ErrorKind, ProxyError
 from inference_provider_proxy.domain.models import ChatRequest, ClientIdentity, SubscriptionInfo
 from qa.integration.conftest import build_harness
 
@@ -63,6 +63,10 @@ def _slow_stream_handler(delay_s: float = 0.05, count: int = 6):
     return handler
 
 
+def _refuse(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("refused")
+
+
 def _request(harness, request_id: str, *, stream: bool) -> ChatRequest:
     return ChatRequest(
         request_id=request_id,
@@ -73,29 +77,31 @@ def _request(harness, request_id: str, *, stream: bool) -> ChatRequest:
     )
 
 
-async def test_midstream_abort_releases_the_slot() -> None:
+async def _drain(chunks) -> None:
+    async for _ in chunks:
+        pass
+
+
+async def test_midstream_abort_when_client_disconnects_then_releases_the_slot() -> None:
     harness = build_harness(_slow_stream_handler())
     result = await harness.chat.stream(_request(harness, "r1", stream=True))
     chunks = result.chunks
-
     first = await anext(chunks)
-    assert first
-    assert harness.gate.snapshot().in_flight == 1
+    held = harness.gate.snapshot().in_flight
 
     await chunks.aclose()
-
-    # Released promptly, well inside the configured disconnect-to-release bound.
-    assert harness.gate.snapshot().in_flight == 0
-    assert harness.metrics.errors().by_kind[ErrorKind.CLIENT_ABORTED.value] == 1
-
-    # A subsequent request is served.
+    released = harness.gate.snapshot()
     follow_up = await harness.chat.complete(_request(harness, "r2", stream=False))
+
+    assert first
+    assert held == 1
+    assert released.in_flight == 0
+    assert harness.metrics.errors().by_kind[ErrorKind.CLIENT_ABORTED.value] == 1
     assert follow_up.status_code == 200
 
 
-async def test_waiter_cancelled_before_admission_never_consumes_capacity() -> None:
+async def test_waiter_when_cancelled_before_admission_then_never_consumes_capacity() -> None:
     harness = build_harness(_slow_stream_handler(delay_s=0.1, count=8))
-
     slot_cm = harness.gate.slot(
         request_id="hold",
         client=ClientIdentity(address="10.0.0.1"),
@@ -104,30 +110,26 @@ async def test_waiter_cancelled_before_admission_never_consumes_capacity() -> No
         max_wait_s=5.0,
     )
     await slot_cm.__aenter__()
-    assert harness.gate.snapshot().in_flight == 1
+    held = harness.gate.snapshot().in_flight
 
     task = asyncio.create_task(harness.chat.complete(_request(harness, "waiter", stream=False)))
     await asyncio.sleep(0.05)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-
     snapshot = harness.gate.snapshot()
+    await slot_cm.__aexit__(None, None, None)
+    released = harness.gate.snapshot()
+
+    assert held == 1
     assert snapshot.cancelled_while_waiting_total == 1
     assert snapshot.queued == 0
-    assert snapshot.in_flight == 1  # still only the holder
-
-    await slot_cm.__aexit__(None, None, None)
-    assert harness.gate.snapshot().in_flight == 0
+    assert snapshot.in_flight == 1
+    assert released.in_flight == 0
 
 
-async def test_failure_that_never_reached_the_provider_releases_capacity() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("refused")
-
-    harness = build_harness(handler, max_retries=0)
-
-    from inference_provider_proxy.domain.errors import ProxyError
+async def test_failure_before_the_provider_when_raised_then_releases_capacity() -> None:
+    harness = build_harness(_refuse, max_retries=0)
 
     with pytest.raises(ProxyError) as excinfo:
         await harness.chat.complete(_request(harness, "r1", stream=False))
@@ -138,8 +140,6 @@ async def test_failure_that_never_reached_the_provider_releases_capacity() -> No
 
 
 class _StalledStream:
-    """A provider stream whose teardown stalls, to prove the release bound."""
-
     status_code = 200
     headers: dict[str, str] = {}
     provider_id: str | None = None
@@ -161,8 +161,6 @@ class _StalledStream:
 
 
 class _StallingProvider:
-    """Minimal ``LLMProviderPort`` double whose stream teardown stalls."""
-
     def __init__(self, stall_s: float) -> None:
         self._stall_s = stall_s
 
@@ -192,8 +190,7 @@ def _stream_request(clock, request_id: str) -> ChatRequest:
     )
 
 
-async def test_stalled_upstream_teardown_still_releases_within_the_bound() -> None:
-    """A stalled upstream teardown must not hold the key past the bound."""
+async def test_stalled_upstream_teardown_when_hit_then_releases_within_the_bound() -> None:
     settings = Settings(_env_file=None, upstream_api_key="k", disconnect_release=0.05)
     clock = SystemClock()
     gate = AsyncioGate(capacity=1, max_depth=8, clock=clock)
@@ -205,36 +202,36 @@ async def test_stalled_upstream_teardown_still_releases_within_the_bound() -> No
         clock=clock,
         settings=settings,
     )
-
     result = await chat.stream(_stream_request(clock, "r1"))
-    assert await anext(result.chunks)
-    assert gate.snapshot().in_flight == 1
+    first = await anext(result.chunks)
+    held = gate.snapshot().in_flight
 
     started = time.monotonic()
     await result.chunks.aclose()
     elapsed = time.monotonic() - started
+    released = gate.snapshot()
 
-    assert gate.snapshot().in_flight == 0
+    assert first
+    assert held == 1
+    assert released.in_flight == 0
     assert elapsed < 1.0
     assert metrics.errors().by_kind[ErrorKind.CLIENT_ABORTED.value] == 1
 
 
-async def test_cancelled_stream_consumer_releases_the_slot() -> None:
-    """Cancelling the consumer (a disconnect) frees the key promptly."""
+async def test_cancelled_stream_consumer_when_disconnects_then_releases_the_slot() -> None:
     harness = build_harness(_slow_stream_handler(delay_s=0.05, count=8))
     result = await harness.chat.stream(_request(harness, "r1", stream=True))
-    assert await anext(result.chunks)
-    assert harness.gate.snapshot().in_flight == 1
+    first = await anext(result.chunks)
+    held = harness.gate.snapshot().in_flight
 
-    async def drain() -> None:
-        async for _ in result.chunks:
-            pass
-
-    task = asyncio.create_task(drain())
+    task = asyncio.create_task(_drain(result.chunks))
     await asyncio.sleep(0.02)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+    released = harness.gate.snapshot()
 
-    assert harness.gate.snapshot().in_flight == 0
+    assert first
+    assert held == 1
+    assert released.in_flight == 0
     assert harness.metrics.errors().by_kind[ErrorKind.CLIENT_ABORTED.value] == 1

@@ -24,9 +24,6 @@ import pytest
 
 pytestmark = [
     pytest.mark.e2e,
-    # One event loop for the whole module: LangChain's chat client owns an httpx
-    # connection pool bound to the loop it was created on, and a per-test loop
-    # makes that pool close onto a dead loop during the next test's teardown.
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
@@ -51,7 +48,6 @@ def _skip_if_provider_side(exc: Exception) -> None:
 
 
 async def _aclose(llm: object) -> None:
-    """Close the underlying async client while this test's loop is still alive."""
     with contextlib.suppress(Exception):
         client = getattr(llm, "async_client", None)
         close = getattr(client, "close", None)
@@ -78,65 +74,66 @@ async def _drive(call):
         raise
 
 
-async def test_non_streaming_invoke() -> None:
+async def _get_weather(city: str) -> str:
+    """Return the weather for a city."""
+    return f"sunny in {city}"
+
+
+async def test_non_streaming_invoke_when_prompted_then_returns_content() -> None:
+    prompt = "Reply with the single word: pong"
+
     async with _llm() as llm:
-        result = await _drive(lambda: llm.ainvoke("Reply with the single word: pong"))
+        result = await _drive(lambda: llm.ainvoke(prompt))
+
     assert result.content
 
 
-async def test_streaming_invoke() -> None:
+async def test_streaming_invoke_when_counting_then_yields_incremental_chunks() -> None:
     chunks: list[str] = []
-    try:
-        async with _llm() as llm:
-            async for chunk in llm.astream("Count from one to three."):
-                if chunk.content:
-                    chunks.append(str(chunk.content))
-    except Exception as exc:  # noqa: BLE001
-        _skip_if_provider_side(exc)
-        raise
-    assert chunks, "streaming produced no incremental content"
-
-
-async def test_tool_calling() -> None:
-    def get_weather(city: str) -> str:
-        """Return the weather for a city."""
-        return f"sunny in {city}"
 
     async with _llm() as llm:
-        bound = llm.bind_tools([get_weather])
-        result = await _drive(lambda: bound.ainvoke("What is the weather in Paris?"))
+        async for chunk in llm.astream("Count from one to three."):
+            if chunk.content:
+                chunks.append(str(chunk.content))
+
+    assert chunks
+
+
+async def test_tool_calling_when_asked_for_weather_then_emits_a_tool_call() -> None:
+    question = "What is the weather in Paris?"
+
+    async with _llm() as llm:
+        bound = llm.bind_tools([_get_weather])
+        result = await _drive(lambda: bound.ainvoke(question))
+
     assert getattr(result, "tool_calls", None) is not None
 
 
-async def test_langgraph_agent_loop() -> None:
+async def _langgraph_answer(state: dict) -> dict:
+    async with _llm() as llm:
+        result = await _drive(lambda: llm.ainvoke(state["question"]))
+    return {"question": state["question"], "answer": str(result.content)}
+
+
+async def test_langgraph_agent_loop_when_invoked_then_produces_an_answer() -> None:
     try:
         from langgraph.graph import END, START, StateGraph
     except Exception:  # noqa: BLE001
         pytest.skip("langgraph is not importable in this environment")
 
-    from typing import TypedDict
-
-    class State(TypedDict):
-        question: str
-        answer: str
-
-    async def answer(state: State) -> State:
-        async with _llm() as llm:
-            result = await _drive(lambda: llm.ainvoke(state["question"]))
-        return {"question": state["question"], "answer": str(result.content)}
-
-    graph = StateGraph(State)
-    graph.add_node("answer", answer)
+    graph = StateGraph(dict)
+    graph.add_node("answer", _langgraph_answer)
     graph.add_edge(START, "answer")
     graph.add_edge("answer", END)
     compiled = graph.compile()
-
     final = await compiled.ainvoke({"question": "Say 'agent ok'.", "answer": ""})
+
     assert final["answer"]
 
 
-async def test_five_concurrent_chains_all_succeed() -> None:
-    # Distinct clients, so the concurrency is real (five separate HTTP callers).
+async def test_five_concurrent_chains_when_run_together_then_all_succeed() -> None:
+    answers: list[str] = []
+
     async with contextlib.AsyncExitStack() as stack:
         llms = [await stack.enter_async_context(_llm()) for _ in range(5)]
 
@@ -145,30 +142,36 @@ async def test_five_concurrent_chains_all_succeed() -> None:
             return str(result.content)
 
         answers = await asyncio.gather(*(one(llm, i) for i, llm in enumerate(llms)))
+
     assert len(answers) == 5
     assert all(answers)
 
 
-async def test_midstream_abort_then_new_request() -> None:
+async def test_stream_when_aborted_midstream_then_a_follow_up_request_is_served() -> None:
+    follow_up = None
+    first = None
+
     async with _llm() as llm:
         stream = llm.astream("Write a long paragraph about rivers.")
         try:
             first = await anext(stream.__aiter__())
-            assert first is not None
         except Exception as exc:  # noqa: BLE001
             _skip_if_provider_side(exc)
             raise
         finally:
             with contextlib.suppress(Exception):
                 await stream.aclose()
-
-        # The proxy must have released the slot, so this completes promptly.
         follow_up = await _drive(lambda: llm.ainvoke("Reply with: recovered"))
+
+    assert first is not None
     assert follow_up.content
 
 
-async def test_long_context_round_trip() -> None:
+async def test_long_context_when_round_tripped_then_still_returns_content() -> None:
     filler = "The quick brown fox jumps over the lazy dog. " * 200
+    prompt = f"{filler}\n\nReply with: done"
+
     async with _llm() as llm:
-        result = await _drive(lambda: llm.ainvoke(f"{filler}\n\nReply with: done"))
+        result = await _drive(lambda: llm.ainvoke(prompt))
+
     assert result.content
