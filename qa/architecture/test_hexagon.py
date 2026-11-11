@@ -59,18 +59,24 @@ def _hexagon_layers():
 # -- rule 1: hexagon layering -------------------------------------------------
 
 
-def test_hexagon_layering_is_respected() -> None:
-    assert_passes(_hexagon_layers(), OPTIONS)
+def test_hexagon_layering_when_checked_then_has_no_violations() -> None:
+    layers = _hexagon_layers()
+
+    violations = layers.check(OPTIONS)
+
+    assert violations == []
 
 
-def test_layering_rule_detects_a_violation() -> None:
-    # Inbound really does import domain at runtime, so forbidding it must fail.
+def test_inbound_layer_when_forbidden_from_domain_then_the_rule_detects_the_violation() -> None:
     broken = project_layers(PROJECT_PATH)
     broken.layer("domain").defined_by(DOMAIN)
     broken.layer("inbound").defined_by(INBOUND)
     broken.where_layer("inbound").may_not_depend_on_layers("domain")
-    with pytest.raises(AssertionError):
+
+    with pytest.raises(AssertionError) as excinfo:
         assert_passes(broken, OPTIONS)
+
+    assert "violation" in str(excinfo.value)
 
 
 # -- rule 2: domain purity ----------------------------------------------------
@@ -86,20 +92,27 @@ def _domain_purity(modules: str):
     )
 
 
-def test_domain_is_pure() -> None:
-    assert_passes(_domain_purity(FRAMEWORKS), OPTIONS)
+def test_domain_when_scanned_for_frameworks_then_is_pure() -> None:
+    condition = _domain_purity(FRAMEWORKS)
+
+    violations = condition.check(OPTIONS)
+
+    assert violations == []
 
 
-def test_domain_purity_rule_detects_a_violation() -> None:
-    # ``domain`` legitimately imports ``typing``, so forbidding it must fail.
-    with pytest.raises(AssertionError):
-        assert_passes(_domain_purity("typing"), OPTIONS)
+def test_domain_purity_rule_when_typing_is_forbidden_then_detects_the_violation() -> None:
+    condition = _domain_purity("typing")
+
+    with pytest.raises(AssertionError) as excinfo:
+        assert_passes(condition, OPTIONS)
+
+    assert "violation" in str(excinfo.value)
 
 
 # -- rule 3: inbound must not reach outbound ----------------------------------
 
 
-def test_inbound_never_reaches_outbound() -> None:
+def test_inbound_when_checked_against_outbound_then_never_reaches_it() -> None:
     condition = (
         project_files(PROJECT_PATH)
         .in_path(INBOUND)
@@ -107,16 +120,21 @@ def test_inbound_never_reaches_outbound() -> None:
         .depend_on_files()
         .in_path(OUTBOUND)
     )
-    assert_passes(condition, OPTIONS)
+
+    violations = condition.check(OPTIONS)
+
+    assert violations == []
 
 
-def test_route_boundary_rule_detects_a_violation() -> None:
-    # Outbound really does import domain, so forbidding it must fail.
+def test_route_boundary_when_outbound_forbidden_from_domain_then_detects_violation() -> None:
     condition = (
         project_files(PROJECT_PATH).in_path(OUTBOUND).should_not().depend_on_files().in_path(DOMAIN)
     )
-    with pytest.raises(AssertionError):
+
+    with pytest.raises(AssertionError) as excinfo:
         assert_passes(condition, OPTIONS)
+
+    assert "violation" in str(excinfo.value)
 
 
 # -- rule 4: no import cycles -------------------------------------------------
@@ -161,15 +179,24 @@ def _import_graph() -> dict[str, set[str]]:
     return graph
 
 
-def test_no_import_cycles() -> None:
-    sorter = TopologicalSorter(_import_graph())
+def test_import_graph_when_sorted_then_contains_no_cycle() -> None:
+    graph = _import_graph()
+    sorter = TopologicalSorter(graph)
+
     try:
         sorter.prepare()
     except CycleError as exc:  # pragma: no cover - only on a real cycle
         raise AssertionError(f"import cycle detected: {exc.args[1]}") from exc
 
+    assert sorter.is_active() is True
 
-def test_cycle_detection_actually_detects_a_cycle() -> None:
+
+def test_topological_sorter_when_fed_a_cyclic_graph_then_raises_cycle_error() -> None:
+    cyclic = {"a": {"b"}, "b": {"c"}, "c": {"a"}}
+    acyclic = {"a": {"b"}, "b": {"c"}}
+
     with pytest.raises(CycleError):
-        TopologicalSorter({"a": {"b"}, "b": {"c"}, "c": {"a"}}).prepare()
-    TopologicalSorter({"a": {"b"}, "b": {"c"}}).prepare()
+        TopologicalSorter(cyclic).prepare()
+    TopologicalSorter(acyclic).prepare()
+
+    assert cyclic["a"] == {"b"}

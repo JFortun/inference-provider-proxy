@@ -31,8 +31,20 @@ def _unused_handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"object": "list", "data": []})
 
 
+class _counting_aclose:
+    """Wrap a provider's ``aclose`` and count how often it is called."""
+
+    def __init__(self, provider) -> None:
+        self._provider = provider
+        self._real = provider.aclose
+        self.calls = 0
+
+    async def __call__(self) -> None:
+        self.calls += 1
+        await self._real()
+
+
 async def _drive_lifespan(app) -> list[dict]:
-    """Send a startup then a shutdown over the ASGI lifespan protocol."""
     inbox: asyncio.Queue[dict] = asyncio.Queue()
     inbox.put_nowait({"type": "lifespan.startup"})
     inbox.put_nowait({"type": "lifespan.shutdown"})
@@ -48,21 +60,14 @@ async def _drive_lifespan(app) -> list[dict]:
     return sent
 
 
-async def test_lifespan_starts_then_stops_the_poller(monkeypatch) -> None:
+async def test_lifespan_when_driven_then_starts_then_stops_the_poller(monkeypatch) -> None:
     harness = build_harness(_unused_handler)
     services = harness.app.state.services
     poller = _FakePoller()
+    aclose_calls = _counting_aclose(services.provider)
 
-    closes = {"n": 0}
-    real_aclose = services.provider.aclose
-
-    async def _record_aclose() -> None:
-        closes["n"] += 1
-        await real_aclose()
-
-    monkeypatch.setattr(services.provider, "aclose", _record_aclose)
+    monkeypatch.setattr(services.provider, "aclose", aclose_calls)
     monkeypatch.setattr(main, "build_services", lambda settings: (services, poller))
-
     app = main.build_app()
     sent = await _drive_lifespan(app)
 
@@ -71,10 +76,12 @@ async def test_lifespan_starts_then_stops_the_poller(monkeypatch) -> None:
         "lifespan.shutdown.complete",
     ]
     assert poller.events == ["start", "stop"]
-    assert closes["n"] == 1
+    assert aclose_calls.calls == 1
 
 
-async def test_startup_and_shutdown_are_logged_without_the_key(monkeypatch, caplog) -> None:
+async def test_startup_and_shutdown_when_logged_then_never_expose_the_key(
+    monkeypatch, caplog
+) -> None:
     harness = build_harness(_unused_handler)
     services = harness.app.state.services
     settings = Settings(
@@ -85,7 +92,6 @@ async def test_startup_and_shutdown_are_logged_without_the_key(monkeypatch, capl
 
     monkeypatch.setattr(main, "get_settings", lambda: settings)
     monkeypatch.setattr(main, "build_services", lambda _settings: (services, _FakePoller()))
-
     app = main.build_app()
     with caplog.at_level(logging.INFO, logger="ipp.app"):
         await _drive_lifespan(app)
@@ -95,6 +101,5 @@ async def test_startup_and_shutdown_are_logged_without_the_key(monkeypatch, capl
     assert any("key=set" in line for line in lines)
     assert any(line.startswith("limits capacity=1") for line in lines)
     assert "proxy stopped" in lines
-    # The key is reported as presence only, never as a value.
     assert "sekret-provider-key-abc123" not in caplog.text
     assert "Bearer" not in caplog.text

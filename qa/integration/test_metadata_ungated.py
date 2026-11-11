@@ -8,6 +8,22 @@ from inference_provider_proxy.adapters.outbound.subscription.poller import Subsc
 from inference_provider_proxy.domain.models import ClientIdentity
 from qa.integration.conftest import FakeClock, build_harness
 
+_MODELS = {
+    "object": "list",
+    "data": [
+        {"id": "deepseek-v4.1-flash", "object": "model", "context_length": 128000},
+        {"id": "mimo-v2.5", "object": "model", "context_length": 32000},
+    ],
+}
+
+_USAGE = {
+    "object": "subscription",
+    "pool": "core",
+    "status": "active",
+    "expires_at": "2026-12-31T00:00:00Z",
+    "key_name": "house",
+}
+
 
 def _metadata_handler() -> tuple[object, dict[str, int]]:
     calls = {"models": 0, "usage": 0}
@@ -16,38 +32,59 @@ def _metadata_handler() -> tuple[object, dict[str, int]]:
         path = request.url.path
         if path.endswith("/v1/models"):
             calls["models"] += 1
-            return httpx.Response(
-                200,
-                json={
-                    "object": "list",
-                    "data": [
-                        {"id": "deepseek-v4.1-flash", "object": "model", "context_length": 128000},
-                        {"id": "mimo-v2.5", "object": "model", "context_length": 32000},
-                    ],
-                },
-            )
+            return httpx.Response(200, json=_MODELS)
         if path.endswith("/v1/usage"):
             calls["usage"] += 1
-            return httpx.Response(
-                200,
-                json={
-                    "object": "subscription",
-                    "pool": "core",
-                    "status": "active",
-                    "expires_at": "2026-12-31T00:00:00Z",
-                    "key_name": "house",
-                },
-            )
+            return httpx.Response(200, json=_USAGE)
         return httpx.Response(404, json={"error": "not found"})
 
     return handler, calls
 
 
-async def test_metadata_succeeds_while_the_key_is_busy(asgi_client_factory) -> None:
-    handler, calls = _metadata_handler()
+def _verbatim_handler(request: httpx.Request) -> httpx.Response:
+    if request.url.path.endswith("/v1/models"):
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": [
+                    {
+                        "id": "deepseek-v4.1-flash",
+                        "object": "model",
+                        "created": 1759872000,
+                        "owned_by": "deepseek",
+                        "type": "chat",
+                        "context_length": 128000,
+                    }
+                ],
+            },
+        )
+    if request.url.path.endswith("/v1/usage"):
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "plan": {
+                        "slug": "core",
+                        "status": "active",
+                        "expires_at": "2030-01-01T00:00:00.000Z",
+                    },
+                    "key": {
+                        "name": "Core key",
+                        "type": "subscription",
+                        "created_at": "2026-09-09T10:10:52.449Z",
+                    },
+                },
+            },
+        )
+    return httpx.Response(404, json={"error": "not found"})
+
+
+async def test_metadata_when_key_is_busy_then_succeeds_without_gating(asgi_client_factory) -> None:
+    handler, _ = _metadata_handler()
     harness = build_harness(handler)
     client = asgi_client_factory(harness.app)
-
     slot_cm = harness.gate.slot(
         request_id="holder",
         client=ClientIdentity(address="10.0.0.3"),
@@ -56,42 +93,42 @@ async def test_metadata_succeeds_while_the_key_is_busy(asgi_client_factory) -> N
         max_wait_s=5.0,
     )
     await slot_cm.__aenter__()
-    try:
-        models = await client.get("/v1/models")
-        usage = await client.get("/v1/usage")
-        snapshot = harness.gate.snapshot()
-    finally:
-        await slot_cm.__aexit__(None, None, None)
+
+    models = await client.get("/v1/models")
+    usage = await client.get("/v1/usage")
+    snapshot = harness.gate.snapshot()
+    await slot_cm.__aexit__(None, None, None)
 
     assert models.status_code == 200
     assert usage.status_code == 200
     assert [item["id"] for item in models.json()["data"]] == ["deepseek-v4.1-flash", "mimo-v2.5"]
     assert usage.json()["pool"] == "core"
-
-    # Never waited behind, and never consumed, chat capacity.
     assert snapshot.in_flight == 1
     assert snapshot.queued == 0
     assert snapshot.rejected_full_total == 0
     assert snapshot.rejected_timeout_total == 0
 
 
-async def test_metadata_is_served_from_cache_within_ttl(asgi_client_factory) -> None:
+async def test_metadata_when_read_repeatedly_within_ttl_then_is_served_from_cache(
+    asgi_client_factory,
+) -> None:
     handler, calls = _metadata_handler()
     harness = build_harness(handler, metadata_cache_ttl=60)
     client = asgi_client_factory(harness.app)
 
     first = await client.get("/v1/models")
     second = await client.get("/v1/models")
+    await client.get("/v1/usage")
+    await client.get("/v1/usage")
 
     assert first.status_code == second.status_code == 200
-    assert calls["models"] == 1, "the second read must be served from cache"
-
-    await client.get("/v1/usage")
-    await client.get("/v1/usage")
+    assert calls["models"] == 1
     assert calls["usage"] == 1
 
 
-async def test_usage_refresh_updates_subscription_state(asgi_client_factory) -> None:
+async def test_usage_when_refreshed_then_updates_the_subscription_state(
+    asgi_client_factory,
+) -> None:
     handler, _ = _metadata_handler()
     harness = build_harness(handler)
     client = asgi_client_factory(harness.app)
@@ -104,67 +141,31 @@ async def test_usage_refresh_updates_subscription_state(asgi_client_factory) -> 
     assert document["subscription"]["stale"] is False
 
 
-async def test_cache_entry_expires_after_the_ttl(asgi_client_factory) -> None:
+async def test_cache_entry_when_ttl_elapses_then_expires_and_refetches(
+    asgi_client_factory,
+) -> None:
     handler, calls = _metadata_handler()
     clock = FakeClock()
     harness = build_harness(handler, clock=clock, metadata_cache_ttl=5)
     client = asgi_client_factory(harness.app)
 
     await client.get("/v1/models")
-    clock.advance(10)  # past the TTL
+    clock.advance(10)
     await client.get("/v1/models")
 
-    assert calls["models"] == 2, "an expired entry must be refetched"
+    assert calls["models"] == 2
 
 
-async def test_metadata_routes_forward_the_source_payloads(asgi_client_factory) -> None:
-    """Nothing is dropped or re-dialected between the provider and the client."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path.endswith("/v1/models"):
-            return httpx.Response(
-                200,
-                json={
-                    "object": "list",
-                    "data": [
-                        {
-                            "id": "deepseek-v4.1-flash",
-                            "object": "model",
-                            "created": 1759872000,
-                            "owned_by": "deepseek",
-                            "type": "chat",
-                            "context_length": 128000,
-                        }
-                    ],
-                },
-            )
-        if path.endswith("/v1/usage"):
-            return httpx.Response(
-                200,
-                json={
-                    "success": True,
-                    "data": {
-                        "plan": {
-                            "slug": "core",
-                            "status": "active",
-                            "expires_at": "2030-01-01T00:00:00.000Z",
-                        },
-                        "key": {
-                            "name": "Core key",
-                            "type": "subscription",
-                            "created_at": "2026-09-09T10:10:52.449Z",
-                        },
-                    },
-                },
-            )
-        return httpx.Response(404, json={"error": "not found"})
-
-    harness = build_harness(handler)
+async def test_metadata_route_when_forwarded_then_preserves_the_source_payload(
+    asgi_client_factory,
+) -> None:
+    harness = build_harness(_verbatim_handler)
     client = asgi_client_factory(harness.app)
 
-    # The provider's model object arrives verbatim, only pinned keys added.
-    assert (await client.get("/v1/models")).json()["data"][0] == {
+    model = (await client.get("/v1/models")).json()["data"][0]
+    usage = (await client.get("/v1/usage")).json()
+
+    assert model == {
         "id": "deepseek-v4.1-flash",
         "object": "model",
         "created": 1759872000,
@@ -172,34 +173,27 @@ async def test_metadata_routes_forward_the_source_payloads(asgi_client_factory) 
         "type": "chat",
         "context_length": 128000,
     }
-
-    usage = (await client.get("/v1/usage")).json()
     assert usage["success"] is True
     assert usage["key"] == {
         "name": "Core key",
         "type": "subscription",
         "created_at": "2026-09-09T10:10:52.449Z",
     }
-    assert usage["key_name"] == "Core key"  # derived, kept alongside key.*
-    assert usage["pool"] == "core"  # slug renamed by the contract, not dropped
+    assert usage["key_name"] == "Core key"
+    assert usage["pool"] == "core"
     assert usage["object"] == "subscription"
-    assert isinstance(usage["seconds_until_expiry"], int)  # derived
-    # One timestamp dialect: same Z suffix the dashboard renders.
+    assert isinstance(usage["seconds_until_expiry"], int)
     assert usage["expires_at"] == "2030-01-01T00:00:00Z"
     assert "+00:00" not in usage["expires_at"]
 
 
-async def test_background_refresh_populates_the_dashboard_without_a_client(
+async def test_background_refresh_when_poller_runs_then_populates_the_dashboard(
     asgi_client_factory,
 ) -> None:
-    """A fresh proxy shows the real catalogue once the poller ran, not "0 models"."""
     handler, calls = _metadata_handler()
     harness = build_harness(handler)
     client = asgi_client_factory(harness.app)
-
-    document = (await client.get("/dashboard")).json()
-    assert document["upstream"]["models"] == []  # nothing fetched yet
-    assert document["upstream"]["models_checked_at"] is None
+    before = (await client.get("/dashboard")).json()
 
     poller = SubscriptionPoller(
         provider=harness.provider,
@@ -208,11 +202,13 @@ async def test_background_refresh_populates_the_dashboard_without_a_client(
         clock=FakeClock(),
     )
     await poller.refresh_once()
+    after = (await client.get("/dashboard")).json()
 
-    document = (await client.get("/dashboard")).json()
-    assert [model["id"] for model in document["upstream"]["models"]] == [
+    assert before["upstream"]["models"] == []
+    assert before["upstream"]["models_checked_at"] is None
+    assert [model["id"] for model in after["upstream"]["models"]] == [
         "deepseek-v4.1-flash",
         "mimo-v2.5",
     ]
-    assert document["upstream"]["models_checked_at"] is not None
-    assert calls["models"] == 1  # only the poller's fetch; the client route never ran
+    assert after["upstream"]["models_checked_at"] is not None
+    assert calls["models"] == 1

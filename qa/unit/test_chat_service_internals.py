@@ -6,10 +6,17 @@ from inference_provider_proxy.application.services.chat import ChatService
 
 
 class _ExplodingContextManager:
+    def __init__(self) -> None:
+        self.closed = False
+
     async def __aexit__(self, *exc: object) -> bool:
+        self.closed = True
         raise RuntimeError("teardown failed")
 
 
-async def test_close_swallows_teardown_errors() -> None:
-    # Closing must never mask the outcome the slot is being released for.
-    await ChatService._close(_ExplodingContextManager())
+async def test_close_when_teardown_raises_then_swallows_the_error() -> None:
+    exploding = _ExplodingContextManager()
+
+    await ChatService._close(exploding)
+
+    assert exploding.closed is True
